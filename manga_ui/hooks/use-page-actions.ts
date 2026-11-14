@@ -83,7 +83,9 @@ export function usePageActions({
         block.y,
         block.width,
         block.height,
-        block.rotation || 0
+        block.rotation || 0,
+        block.id,
+        block.class_id ?? 0
       )
       updateBlock(block.id, {
         japText: text,

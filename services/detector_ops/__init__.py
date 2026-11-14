@@ -3,10 +3,16 @@
 
 from services.detector_ops.reading_order import sort_manga_reading_order
 from services.detector_ops.box_expander import expand_box_to_bubble
+from services.detector_ops.overlap_resolver import (
+    resolve_overlapping_bubbles,
+    find_text_core_bbox,
+)
 from services.detector_ops.yolo_detector import detect_and_filter_bubbles
 
 __all__ = [
     "sort_manga_reading_order",
     "expand_box_to_bubble",
+    "resolve_overlapping_bubbles",
+    "find_text_core_bbox",
     "detect_and_filter_bubbles",
 ]

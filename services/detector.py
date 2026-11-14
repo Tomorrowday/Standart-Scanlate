@@ -31,6 +31,25 @@ def expand_box_to_bubble(
     return _impl.expand_box_to_bubble(gray_img, orig_x1, orig_y1, orig_x2, orig_y2, other_boxes)
 
 
+def resolve_overlapping_bubbles(
+    gray_img: np.ndarray,
+    boxes: List[Tuple[int, int, int, int, int]],
+) -> List[Tuple[int, int, int, int, int]]:
+    """Разводит перекрывающиеся (сдвоенные) баблы по белой просеке между их текстовыми ядрами."""
+    return _impl.resolve_overlapping_bubbles(gray_img, boxes)
+
+
+def find_text_core_bbox(
+    gray_roi: np.ndarray,
+    exclude_rect: Optional[Tuple[int, int, int, int]] = None,
+) -> Optional[Tuple[int, int, int, int]]:
+    """
+    Возвращает рамку текстового ядра внутри ROI бабла (без внешних стенок бабла).
+    exclude_rect — зона пересечения с соседом в локальных координатах ROI: её содержимое игнорируется.
+    """
+    return _impl.find_text_core_bbox(gray_roi, exclude_rect)
+
+
 def detect_and_filter_bubbles(
     image: Image.Image,
     model_name: str = "yolo_manga.pt",

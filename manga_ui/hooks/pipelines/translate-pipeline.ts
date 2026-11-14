@@ -31,7 +31,16 @@ export async function executeTranslateAll(ctx: PagePipelineContext): Promise<voi
     if (neededOcrIndices.length > 0) {
       await runConcurrent(neededOcrIndices, 3, async (idx) => {
         const b = blocksToOcr[idx]
-        const ocrText = await runOcr(currentPage.id, b.x, b.y, b.width, b.height, b.rotation || 0)
+        const ocrText = await runOcr(
+          currentPage.id,
+          b.x,
+          b.y,
+          b.width,
+          b.height,
+          b.rotation || 0,
+          b.id,
+          b.class_id ?? 0
+        )
         blocksToOcr[idx] = { ...b, japText: ocrText, status: "ocr-done" }
       })
       setTextBlocks([...blocksToOcr])

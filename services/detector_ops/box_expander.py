@@ -42,13 +42,23 @@ def expand_box_to_bubble(
 
         if other_boxes:
             cx = (x1 + x2) // 2
+            cy = (y1 + y2) // 2
             for ox1, oy1, ox2, oy2 in other_boxes:
-                if min(y2, oy2) - max(y1, oy1) > 10:
+                # 1. Ограничение слева/справа при наличии вертикального перекрытия
+                if min(y2, oy2) - max(y1, oy1) > 8:
                     ocx = (ox1 + ox2) // 2
-                    if ocx < cx and ox2 < x1:
+                    if ocx < cx and ox2 <= x1 + 4:
                         hard_limit_left = max(hard_limit_left, ox2 + 2)
-                    elif ocx > cx and ox1 > x2:
+                    elif ocx > cx and ox1 >= x2 - 4:
                         hard_limit_right = min(hard_limit_right, ox1 - 2)
+
+                # 2. Ограничение сверху/снизу при наличии горизонтального перекрытия
+                if min(x2, ox2) - max(x1, ox1) > 8:
+                    ocy = (oy1 + oy2) // 2
+                    if ocy < cy and oy2 <= y1 + 4:
+                        hard_limit_top = max(hard_limit_top, oy2 + 2)
+                    elif ocy > cy and oy1 >= y2 - 4:
+                        hard_limit_bottom = min(hard_limit_bottom, oy1 - 2)
 
         y_slice_start = int(y1 + bh * 0.25)
         y_slice_end = int(y2 - bh * 0.25)

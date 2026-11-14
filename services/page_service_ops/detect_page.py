@@ -57,7 +57,7 @@ def detect_page_bubbles_service(
 
         with db_session() as cur:
             cur.execute("DELETE FROM text_blocks WHERE page_id = ?", (page_id,))
-            for b in boxes:
+            for idx, b in enumerate(boxes):
                 block_id = str(uuid.uuid4())
                 cls_id = int(b.get("class_id", 0))
                 block_shape = "rect"
@@ -79,13 +79,16 @@ def detect_page_bubbles_service(
                 b["text_color"] = "black"
                 b["rotation"] = 0.0
 
+                other_boxes = [boxes[j] for j in range(len(boxes)) if j != idx]
                 jap_text = ocr_image_region(
                     image,
                     float(b["x"]),
                     float(b["y"]),
                     float(b["width"]),
                     float(b["height"]),
-                    rotation=0.0
+                    rotation=0.0,
+                    class_id=cls_id,
+                    other_boxes=other_boxes,
                 )
                 b["jap_text"] = jap_text
                 b["status"] = "ocr-done" if jap_text else "new"

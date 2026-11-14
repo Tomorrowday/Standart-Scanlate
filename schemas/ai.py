@@ -9,6 +9,8 @@ class OcrRequest(BaseModel):
     width: float
     height: float
     rotation: Optional[float] = 0.0
+    block_id: Optional[str] = None
+    class_id: Optional[int] = None
 
 
 class TranslationRequest(BaseModel):

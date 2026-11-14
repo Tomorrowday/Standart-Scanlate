@@ -9,13 +9,24 @@ export async function runOcr(
   y: number,
   width: number,
   height: number,
-  rotation: number = 0
+  rotation: number = 0,
+  blockId?: string,
+  classId?: number
 ): Promise<string> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/ocr`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ page_id: pageId, x, y, width, height, rotation }),
+      body: JSON.stringify({
+        page_id: pageId,
+        x,
+        y,
+        width,
+        height,
+        rotation,
+        block_id: blockId,
+        class_id: classId,
+      }),
     })
     const data = await handleApiResponse<{ success: boolean; text?: string; error?: string }>(
       response,

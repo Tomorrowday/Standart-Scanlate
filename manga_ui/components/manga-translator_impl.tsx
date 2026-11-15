@@ -79,6 +79,8 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
     chapterPages,
     setCurrentPage,
     setCurrentTitleId: settings.setCurrentTitleId,
+    setTitleFontSize: settings.setTitleFontSize,
+    setIsDetecting: pipelines.setIsDetecting,
     setViewMode,
     setCleanCacheBuster,
     globalSettings,
@@ -283,6 +285,9 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
             showJapOverlay={showJapOverlay}
             defaultFontSize={settings.titleFontSize}
             autoOvalBubble={settings.globalSettings.auto_oval_bubble ?? true}
+            fontBubble={settings.globalSettings.font_bubble}
+            fontThought={settings.globalSettings.font_thought}
+            fontSfx={settings.globalSettings.font_sfx}
             onSelect={blocks.setSelectedId}
             onUpdate={blocks.updateBlock}
             onDelete={blocks.deleteBlock}

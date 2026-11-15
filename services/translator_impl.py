@@ -13,13 +13,49 @@ from services.prompts import (
 )
 
 
+def _strip_wrapping_quotes(text: str) -> str:
+    """
+    Снимает внешние кавычки только в том случае, если они действительно обрамляют
+    ВСЮ реплику целиком, а не принадлежат двум разным цитатам в начале и в конце.
+    """
+    if len(text) < 2:
+        return text
+
+    # 1. Парные угловые кавычки «...»
+    if text.startswith("«") and text.endswith("»"):
+        depth = 0
+        closed_before_end = False
+        for idx, ch in enumerate(text):
+            if ch == "«":
+                depth += 1
+            elif ch == "»":
+                depth -= 1
+                if depth == 0 and idx < len(text) - 1:
+                    closed_before_end = True
+                    break
+        if not closed_before_end and depth == 0:
+            return text[1:-1].strip()
+
+    # 2. Прямые двойные кавычки "..."
+    if text.startswith('"') and text.endswith('"'):
+        # Снимаем только если внутри строки больше нет других прямых кавычек
+        if text[1:-1].count('"') == 0:
+            return text[1:-1].strip()
+
+    return text
+
+
 def sanitize_translation(text: str) -> str:
     """
     Удаляет случайные артефакты от нейросети в начале реплики:
+    - Префиксы типа блока: '(bubble)', '(thought)', '(text)', '(sfx)'
     - Префиксы спикеров: '[デンジ]:', '[Макима]:', '[Speaker 1]:', 'Дэндзи:'
-    - Лишние кавычки в начале и конце
+    - Лишние обрамляющие кавычки вокруг всей фразы
     """
     clean = text.strip()
+
+    # 0. Срезаем префикс типа бабла, если модель повторила его из промпта
+    clean = re.sub(r"^\((?:bubble|thought|text|sfx)\)\s*:?\s*", "", clean, flags=re.IGNORECASE)
 
     # 1. Срезаем префиксы вида [Имя в любых символах]: или [Имя]:
     clean = re.sub(r"^\[[^\]]+\]\s*:?\s*", "", clean)
@@ -27,9 +63,8 @@ def sanitize_translation(text: str) -> str:
     # 2. Срезаем префиксы вида "Имя:" без скобок в начале строки (до 20 символов)
     clean = re.sub(r"^[A-Za-zА-Яа-яЁёぁ-んァ-ヶ一-龥]{2,20}\s*:\s*", "", clean)
 
-    # 3. Убираем обрамляющие кавычки, если LLM обернула фразу целиком
-    if (clean.startswith('"') and clean.endswith('"')) or (clean.startswith('«') and clean.endswith('»')):
-        clean = clean[1:-1].strip()
+    # 3. Безопасно убираем обрамляющие кавычки, если LLM обернула всю фразу целиком
+    clean = _strip_wrapping_quotes(clean)
 
     return clean.strip()
 

@@ -1,5 +1,5 @@
 // manga_ui/lib/api/ollama_impl.ts
-// Реализация прямого сетевого взаимодействия с локальным сервером Ollama (с передачей типа бабла class_id)
+// Реализация прямого сетевого взаимодействия с локальным сервером Ollama (с передачей типа бабла class_id, синопсиса и глоссария)
 
 import type { OllamaTranslateItem } from "./ollama"
 
@@ -8,6 +8,22 @@ const CLASS_ID_TO_LABEL: Record<number, string> = {
   1: "thought",
   2: "text",
   3: "sfx",
+}
+
+const EMBEDDING_KEYWORDS = ["embed", "nomic-embed", "bge-", "mxbai-embed", "minilm", "snowflake-arctic-embed"]
+
+export function pickBestOllamaModel(models: string[]): string {
+  if (!models || models.length === 0) return "qwen2.5:7b"
+  const chatModels = models.filter(
+    (m) => !EMBEDDING_KEYWORDS.some((kw) => m.toLowerCase().includes(kw))
+  )
+  const pool = chatModels.length > 0 ? chatModels : models
+  return (
+    pool.find((m) => {
+      const low = m.toLowerCase()
+      return low.includes("qwen") || low.includes("llama") || low.includes("gemma") || low.includes("mistral")
+    }) || pool[0]
+  )
 }
 
 export async function checkOllamaConnection(baseUrl: string = "http://localhost:11434"): Promise<{ ok: boolean; models: string[] }> {
@@ -50,6 +66,21 @@ export async function runOllamaBatchTranslate(
     return `[${idx + 1}] (${typeLabel}) ${spk}${it.text}`
   })
 
+  const synopsisBlock =
+    options.synopsis && options.synopsis.trim()
+      ? `\nСИНОПСИС И СТИЛЬ ТАЙТЛА:\n${options.synopsis.trim()}\n`
+      : ""
+
+  let glossaryBlock = ""
+  if (options.glossary && options.glossary.length > 0) {
+    const gLines = options.glossary.map((g) => {
+      const jp = g.jap?.trim() ? `${g.jap.trim()} -> ` : ""
+      const ctx = g.context?.trim() ? ` (${g.context.trim()})` : ""
+      return `- ${jp}${g.rus.trim()}${ctx}`
+    })
+    glossaryBlock = `\nОБЯЗАТЕЛЬНЫЙ ГЛОССАРИЙ И ПЕРСОНАЖИ:\n${gLines.join("\n")}\n`
+  }
+
   const prompt = `Ты профессиональный литературный переводчик манги с японского на русский язык.
 Переведи следующие реплики манги по порядку.
 В круглых скобках указан тип блока:
@@ -57,7 +88,7 @@ export async function runOllamaBatchTranslate(
 - (thought) — внутренний монолог / мысли / закадровый текст
 - (text) — лаконичная надпись на фоне или приписка от руки
 - (sfx) — звуковой эффект (ономатопея)
-
+${synopsisBlock}${glossaryBlock}
 КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать в ответе тип блока, имена спикеров, префиксы или пояснения!
 Формат ответа СТРОГО:
 [1] Русский текст первой реплики
@@ -93,7 +124,7 @@ ${lines.join("\n")}`
       const idx = parseInt(match[1], 10) - 1
       if (idx >= 0 && idx < items.length) {
         let clean = match[2].trim()
-        clean = clean.replace(/^\((?:bubble|thought|text|sfx)\)\s*/i, "")
+        clean = clean.replace(/^\((?:bubble|thought|text|sfx)\)\s*:?\s*/i, "")
         clean = clean.replace(/^\[[^\]]+\]\s*:?\s*/, "")
         clean = clean.replace(/^[A-Za-zА-Яа-яЁёぁ-んァ-ヶ一-龥]{2,20}\s*:\s*/, "")
         result[items[idx].id] = clean

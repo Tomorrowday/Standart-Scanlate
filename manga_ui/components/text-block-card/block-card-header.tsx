@@ -14,6 +14,9 @@ export interface BlockCardHeaderProps {
   index: number
   pageId?: number
   autoOvalBubble?: boolean
+  fontBubble?: string
+  fontThought?: string
+  fontSfx?: string
   onChange: (patch: Partial<TextBlock>) => void
   onDelete: () => void
   onMoveUp: () => void

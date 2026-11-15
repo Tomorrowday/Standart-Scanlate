@@ -3,7 +3,11 @@ import shutil
 import time
 from fastapi import HTTPException
 from database import get_db
-from routers.pages_handlers.common import _get_clean_backup_path, _backup_clean_file_if_exists
+from routers.pages_handlers.common import (
+    _backup_clean_file_if_exists,
+    _list_clean_backups,
+    _clear_clean_backups,
+)
 from services.page_service import clean_page_bubbles_service, revert_page_clean_service
 
 
@@ -37,12 +41,7 @@ def revert_page_clean(page_id: int):
             cur.execute("SELECT file_path FROM pages WHERE id = ?", (page_id,))
             row = cur.fetchone()
             if row and row["file_path"]:
-                backup_path = _get_clean_backup_path(str(row["file_path"]))
-                if os.path.exists(backup_path):
-                    try:
-                        os.remove(backup_path)
-                    except Exception:
-                        pass
+                _clear_clean_backups(str(row["file_path"]))
 
         new_status = revert_page_clean_service(page_id)
         return {"success": True, "page_status": new_status, "message": "Клин страницы успешно откачен"}
@@ -53,7 +52,7 @@ def revert_page_clean(page_id: int):
 
 
 def undo_last_clean_step(page_id: int):
-    """Откатывает последний шаг Spot Clean / Brush Clean из сохранённого бэкапа."""
+    """Откатывает последний шаг клина из стека резервных копий без удаления всего клина страницы."""
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT file_path, clean_path, status FROM pages WHERE id = ?", (page_id,))
@@ -64,12 +63,13 @@ def undo_last_clean_step(page_id: int):
 
     orig_path = str(row["file_path"])
     clean_path = str(row["clean_path"]) if row["clean_path"] else ""
-    backup_path = _get_clean_backup_path(orig_path)
+    backups = _list_clean_backups(orig_path)
 
-    if os.path.exists(backup_path) and clean_path:
+    if backups and clean_path:
+        latest_backup = backups[-1]
         try:
-            shutil.copy2(backup_path, clean_path)
-            os.remove(backup_path)
+            shutil.copy2(latest_backup, clean_path)
+            os.remove(latest_backup)
             return {
                 "success": True,
                 "restored_from_backup": True,
@@ -80,14 +80,12 @@ def undo_last_clean_step(page_id: int):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Ошибка восстановления бэкапа клина: {e}")
 
-    if clean_path and os.path.exists(clean_path):
-        new_status = revert_page_clean_service(page_id)
-        return {
-            "success": True,
-            "restored_from_backup": False,
-            "clean_path": None,
-            "page_status": new_status,
-            "timestamp": int(time.time() * 1000),
-        }
-
-    return {"success": False, "error": "Нет шагов клина для отката"}
+    # Если бэкапов больше нет — НЕ удаляем весь clean_path страницы,
+    # чтобы повторный Ctrl+Z не уничтожил результат предыдущей работы
+    return {
+        "success": False,
+        "restored_from_backup": False,
+        "clean_path": clean_path or None,
+        "page_status": row["status"],
+        "error": "Нет сохранённых шагов клина для отката",
+    }

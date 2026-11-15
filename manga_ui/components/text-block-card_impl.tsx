@@ -25,6 +25,9 @@ export const TextBlockCard = memo(function TextBlockCard({
   showJapOverlay = false,
   defaultFontSize = 14,
   autoOvalBubble = true,
+  fontBubble,
+  fontThought,
+  fontSfx,
   isSelected,
   onSelect,
   onChange,
@@ -98,6 +101,9 @@ export const TextBlockCard = memo(function TextBlockCard({
         index={index}
         pageId={pageId}
         autoOvalBubble={autoOvalBubble}
+        fontBubble={fontBubble}
+        fontThought={fontThought}
+        fontSfx={fontSfx}
         onChange={onChange}
         onDelete={onDelete}
         onMoveUp={onMoveUp}

@@ -41,6 +41,7 @@ export function usePagePipelines(props: UsePagePipelinesProps): UsePagePipelines
 
   return {
     isDetecting,
+    setIsDetecting,
     isOcrRunning,
     isBatchTranslating,
     isCleaning,

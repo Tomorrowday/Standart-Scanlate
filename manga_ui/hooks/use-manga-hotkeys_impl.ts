@@ -270,8 +270,14 @@ export function useMangaHotkeys({
         return
       }
 
-      // 12. Удаление бабла
-      if (matchHotkey(e, hotkeys.deleteBlock)) {
+      // 12. Удаление бабла (точечно поддерживаем Backspace, если на удаление назначен Delete)
+      const backspaceDeletesBlock =
+        hotkeys.deleteBlock.code === "Delete" &&
+        e.code === "Backspace" &&
+        !isCtrlOrMeta &&
+        !e.shiftKey &&
+        !e.altKey
+      if (backspaceDeletesBlock || matchHotkey(e, hotkeys.deleteBlock)) {
         e.preventDefault()
         onDeleteBlock(selectedId)
         return

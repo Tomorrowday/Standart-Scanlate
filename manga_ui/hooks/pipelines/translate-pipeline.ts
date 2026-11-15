@@ -1,10 +1,37 @@
 // manga_ui/hooks/pipelines/translate-pipeline.ts
-// Локальный перевод через Ollama с дораспознаванием пустых баблов
+// Локальный перевод через Ollama с дораспознаванием пустых баблов и передачей глоссария и синопсиса тайтла
 
-import { releaseVram, runOcr } from "@/lib/api"
-import { runOllamaBatchTranslate, checkOllamaConnection } from "@/lib/api/ollama"
+import { releaseVram, runOcr, getGlossary, getProjectTree } from "@/lib/api"
+import {
+  runOllamaBatchTranslate,
+  checkOllamaConnection,
+  pickBestOllamaModel,
+} from "@/lib/api/ollama"
 import { runConcurrent } from "./concurrent-pool"
 import type { PagePipelineContext } from "./types"
+
+export async function loadTitleTranslationContext(titleId?: number | null): Promise<{
+  synopsis: string
+  glossary: Array<{ jap?: string; rus: string; context?: string }>
+}> {
+  if (!titleId) return { synopsis: "", glossary: [] }
+  try {
+    const [tree, glossaryItems] = await Promise.all([
+      getProjectTree(titleId).catch(() => null),
+      getGlossary(titleId).catch(() => []),
+    ])
+    return {
+      synopsis: tree?.description || "",
+      glossary: (glossaryItems || []).map((g) => ({
+        jap: g.jap_word,
+        rus: g.rus_word,
+        context: g.context,
+      })),
+    }
+  } catch {
+    return { synopsis: "", glossary: [] }
+  }
+}
 
 export async function executeTranslateAll(ctx: PagePipelineContext): Promise<void> {
   const {
@@ -69,9 +96,13 @@ export async function executeTranslateAll(ctx: PagePipelineContext): Promise<voi
       return
     }
 
+    const { synopsis, glossary } = await loadTitleTranslationContext(currentPage.title_id)
+
     const translations = await runOllamaBatchTranslate(toTranslate, {
       baseUrl: "http://localhost:11434",
-      model: check.models.find((m) => m.includes("qwen") || m.includes("llama")) || check.models[0] || "qwen2.5:7b",
+      model: pickBestOllamaModel(check.models),
+      synopsis,
+      glossary,
     })
 
     const autoOval = globalSettings.auto_oval_bubble ?? true

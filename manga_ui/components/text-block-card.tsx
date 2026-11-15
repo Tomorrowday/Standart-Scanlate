@@ -17,6 +17,9 @@ export interface TextBlockCardProps {
   showJapOverlay?: boolean
   defaultFontSize?: number
   autoOvalBubble?: boolean
+  fontBubble?: string
+  fontThought?: string
+  fontSfx?: string
   isSelected: boolean
   onSelect: () => void
   onChange: (patch: Partial<TextBlock>) => void

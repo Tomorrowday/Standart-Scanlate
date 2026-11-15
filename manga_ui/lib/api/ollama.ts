@@ -1,6 +1,6 @@
 // manga_ui/lib/api/ollama.ts
 /**
- * Контракт клиента локальной нейросети Ollama (проверка соединения и пакетный перевод с учётом типа бабла).
+ * Контракт клиента локальной нейросети Ollama (проверка соединения, выбор текстовой модели и пакетный перевод с учётом типа бабла, синопсиса и глоссария).
  * Реализация: manga_ui/lib/api/ollama_impl.ts
  * Зависимости реализации: fetch, AbortController, регулярные выражения парсинга ответов
  */
@@ -20,5 +20,6 @@ export interface OllamaTranslateItem {
 
 export {
   checkOllamaConnection,
+  pickBestOllamaModel,
   runOllamaBatchTranslate,
 } from "./ollama_impl"

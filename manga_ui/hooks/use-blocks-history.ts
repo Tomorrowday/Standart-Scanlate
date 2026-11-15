@@ -114,7 +114,7 @@ export function useBlocksHistory({
     if (snapshot.hasCleanStep && currentPageRef.current) {
       try {
         const res = await undoLastCleanStep(currentPageRef.current.id)
-        if (res?.success) {
+        if (res?.success && res?.restored_from_backup) {
           onPageStatusUpdate(
             currentPageRef.current.id,
             (res.page_status as PageStatus) || "cleaned",

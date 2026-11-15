@@ -17,6 +17,9 @@ export function TextBlocksList({
   showJapOverlay = false,
   defaultFontSize = 14,
   autoOvalBubble = true,
+  fontBubble,
+  fontThought,
+  fontSfx,
   onSelect,
   onUpdate,
   onDelete,
@@ -67,6 +70,9 @@ export function TextBlocksList({
           showJapOverlay={showJapOverlay}
           defaultFontSize={defaultFontSize}
           autoOvalBubble={autoOvalBubble}
+          fontBubble={fontBubble}
+          fontThought={fontThought}
+          fontSfx={fontSfx}
           isSelected={block.id === selectedId}
           onSelect={() => onSelect(block.id)}
           onChange={(patch) => onUpdate(block.id, patch)}

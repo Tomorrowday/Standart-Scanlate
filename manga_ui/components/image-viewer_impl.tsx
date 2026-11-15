@@ -7,11 +7,13 @@ import type React from "react"
 import { useRef, useState, useCallback, useEffect, useMemo } from "react"
 import { FolderOpen, Loader2 } from "lucide-react"
 import type { TextBlock } from "@/lib/types"
+import { setPageImageMetrics } from "@/lib/typeset"
 import { releaseVram } from "@/lib/api/pages"
 import { useHotkeysConfig } from "@/hooks/use-manga-hotkeys"
 import { useBoxTransform, type DrawRect } from "@/hooks/use-box-transform"
 import { useBrushTool, type BrushMode } from "@/hooks/use-brush-tool"
 import { BubbleOverlayItem } from "@/components/image-viewer/bubble-overlay-item"
+import { computeJapPlatePlacements } from "@/components/image-viewer/jap-overlay-placement"
 import { ViewerHeaderToolbar } from "@/components/image-viewer/viewer-header-toolbar"
 import { ViewerFooterHints } from "@/components/image-viewer/viewer-footer-hints"
 import type { ImageViewerProps } from "./image-viewer"
@@ -47,6 +49,33 @@ export function ImageViewer({
 
   const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null)
   const [draft, setDraft] = useState<DrawRect | null>(null)
+  const [imageMetrics, setImageMetrics] = useState<{ width: number; height: number } | null>(null)
+
+  // Реальный размер отрисованного скана нужен для корректной оценки габаритов JP-плашек
+  const measureImage = useCallback(() => {
+    const img = imgRef.current
+    if (!img || !img.clientWidth || !img.clientHeight) return
+    setImageMetrics((prev) =>
+      prev && prev.width === img.clientWidth && prev.height === img.clientHeight
+        ? prev
+        : { width: img.clientWidth, height: img.clientHeight }
+    )
+  }, [])
+
+  useEffect(() => {
+    measureImage()
+    window.addEventListener("resize", measureImage)
+    return () => window.removeEventListener("resize", measureImage)
+  }, [imageSrc, measureImage])
+
+  // Скан мог загрузиться из кэша ещё до монтирования (или до смены imageSrc):
+  // публикуем его naturalWidth / naturalHeight для верстки в карточках.
+  useEffect(() => {
+    const img = imgRef.current
+    if (img?.complete && img.naturalWidth > 0) {
+      setPageImageMetrics(img.naturalWidth, img.naturalHeight)
+    }
+  }, [imageSrc])
 
   const prevToolRef = useRef(activeTool)
   useEffect(() => {
@@ -139,6 +168,13 @@ export function ImageViewer({
     return draft ? [...textBlocks, { id: "__draft__", ...draft } as TextBlock] : textBlocks
   }, [textBlocks, draft])
 
+  // Централизованный расчёт свободных позиций всех JP-плашек страницы:
+  // без перекрытий с баблами и между самими плашками.
+  const japPlatePlacements = useMemo(() => {
+    if (!showJapOverlay) return {}
+    return computeJapPlatePlacements(textBlocks, imageMetrics)
+  }, [textBlocks, showJapOverlay, imageMetrics])
+
   return (
     <section className="flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden">
       <ViewerHeaderToolbar
@@ -180,6 +216,11 @@ export function ImageViewer({
               src={imageSrc}
               alt="Manga page"
               draggable={false}
+              onLoad={(e) => {
+                const el = e.currentTarget
+                setPageImageMetrics(el.naturalWidth, el.naturalHeight)
+                measureImage()
+              }}
               className="block w-full rounded-lg border border-slate-800"
             />
 
@@ -228,6 +269,7 @@ export function ImageViewer({
                   isSelected={box.id === selectedId}
                   showTypeset={showTypeset}
                   showJapOverlay={showJapOverlay}
+                  autoJapPlacement={japPlatePlacements[box.id] ?? null}
                   imgElement={imgRef.current}
                   isEditingCurrent={isEditing && editId === box.id}
                   editType={editType}

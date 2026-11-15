@@ -20,6 +20,7 @@ export const BubbleOverlayItem = memo(function BubbleOverlayItem({
   isSelected,
   showTypeset,
   showJapOverlay = false,
+  autoJapPlacement = null,
   imgElement,
   isEditingCurrent,
   editType,
@@ -86,6 +87,7 @@ export const BubbleOverlayItem = memo(function BubbleOverlayItem({
       titleId={titleId}
       isSelected={isSelected}
       showJapOverlay={showJapOverlay}
+      autoJapPlacement={autoJapPlacement}
       isDraft={isDraft}
       isInlineEditing={isInlineEditing}
       currentX={currentX}

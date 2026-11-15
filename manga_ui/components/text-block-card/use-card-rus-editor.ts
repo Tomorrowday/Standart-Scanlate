@@ -11,6 +11,8 @@ import {
   joinLinesRemovingSoftHyphens,
   hasManualLineBreaks,
   stripForcedSingleLineMarker,
+  projectLinesToOriginalCase,
+  usePageImageMetrics,
   FORCED_SINGLE_LINE_MARKER,
 } from "@/lib/typeset"
 
@@ -50,41 +52,14 @@ export function useCardRusEditor({
   const [isFocusedRus, setIsFocusedRus] = useState(false)
   const [localRusText, setLocalRusText] = useState(() => stripForcedSingleLineMarker(block.rusText))
 
+  const { naturalW, naturalH } = usePageImageMetrics()
+
   const rusTextareaRef = useRef<HTMLTextAreaElement>(null)
   const snapshotLinesRef = useRef<string[]>([])
   // Был ли блок ручным до начала правки и менял ли пользователь разбивку строк.
   const wasManualBeforeEditRef = useRef(false)
   const hadForcedSingleLineRef = useRef(false)
   const userTouchedBreaksRef = useRef(false)
-  const handledPageImageRef = useRef<HTMLImageElement | null>(null)
-  const [pageImageTick, setPageImageTick] = useState(0)
-
-  // Скан страницы может быть ещё не загружен в момент первого расчёта строк.
-  // Дожидаемся события load у img[alt='Manga page'], чтобы renderedLines
-  // пересчитались с реальными naturalWidth / naturalHeight вместо дефолтных 1100x1600.
-  useEffect(() => {
-    if (typeof document === "undefined") return
-
-    const bumpLines = () => setPageImageTick((tick) => tick + 1)
-    const imgEl = document.querySelector<HTMLImageElement>("img[alt='Manga page']")
-    if (!imgEl) return
-
-    if (imgEl.complete) {
-      // Строки могли посчитаться до загрузки скана — форсируем один пересчёт.
-      if (handledPageImageRef.current !== imgEl) {
-        handledPageImageRef.current = imgEl
-        bumpLines()
-      }
-      return
-    }
-
-    const handleLoad = () => {
-      handledPageImageRef.current = imgEl
-      bumpLines()
-    }
-    imgEl.addEventListener("load", handleLoad)
-    return () => imgEl.removeEventListener("load", handleLoad)
-  }, [block.id])
 
   const renderedLines = useMemo(() => {
     if (typeof document === "undefined") return (block.rusText || "").split(/\r?\n/)
@@ -95,19 +70,17 @@ export function useCardRusEditor({
     const raw = (block.rusText || "").trim()
     if (!ctx || !raw) return []
 
-    const imgEl = document.querySelector<HTMLImageElement>("img[alt='Manga page']")
-    const naturalW = imgEl?.naturalWidth || 1100
-    const naturalH = imgEl?.naturalHeight || 1600
-
     const baseSize = block.fontSize || defaultFontSize
     const masterFontSize = Math.round(baseSize * (naturalH / 1200))
     const masterBoxPixelW = block.width * naturalW
     const masterBoxPixelH = block.height * naturalH
     const currentFont = block.fontFamily || "v_CCFaceFront"
 
+    const displayText = block.isUppercase ? raw.toUpperCase() : raw
+
     const res = layoutBubbleTextLines(
       ctx,
-      raw,
+      displayText,
       masterBoxPixelW,
       masterBoxPixelH,
       masterFontSize,
@@ -118,6 +91,28 @@ export function useCardRusEditor({
       block.isItalic,
       block.minHyphens !== false
     )
+
+    if (block.isUppercase) {
+      const rawForEdit = raw.split(FORCED_SINGLE_LINE_MARKER).join("")
+      const projected = projectLinesToOriginalCase(rawForEdit, res.lines)
+      if (projected && projected.length > 0) {
+        return projected
+      }
+      const rawRes = layoutBubbleTextLines(
+        ctx,
+        raw,
+        masterBoxPixelW,
+        masterBoxPixelH,
+        masterFontSize,
+        currentFont,
+        block.shape || "rect",
+        block.paddingMode || "safe",
+        block.isBold,
+        block.isItalic,
+        block.minHyphens !== false
+      )
+      return [...rawRes.lines]
+    }
 
     // Маркер однострочности НЕ добавляем: в textarea должен быть только
     // чистый видимый текст, иначе Backspace удаляет невидимый \u2060.
@@ -132,9 +127,11 @@ export function useCardRusEditor({
     block.paddingMode,
     block.isBold,
     block.isItalic,
+    block.isUppercase,
     block.minHyphens,
     defaultFontSize,
-    pageImageTick,
+    naturalW,
+    naturalH,
   ])
 
   useEffect(() => {

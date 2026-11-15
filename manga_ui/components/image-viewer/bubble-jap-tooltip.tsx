@@ -16,6 +16,7 @@ import {
   type TokenSpan,
 } from "@/lib/api/dictionary"
 import { TokenizedBubbleText } from "./tokenized-bubble-text"
+import type { JapPlatePlacement } from "./jap-overlay-placement"
 
 export interface BubbleJapTooltipProps {
   box: TextBlock
@@ -30,6 +31,8 @@ export interface BubbleJapTooltipProps {
   currentW: number
   currentH: number
   currentRot: number
+  /** Свободная позиция плашки, посчитанная централизованно (нормализованные координаты страницы). */
+  autoJapPlacement?: JapPlatePlacement | null
   onSelect: (id: string) => void
   onUpdate?: (id: string, patch: Partial<TextBlock>) => void
 }
@@ -47,6 +50,7 @@ export function BubbleJapTooltip({
   currentW,
   currentH,
   currentRot,
+  autoJapPlacement = null,
   onSelect,
   onUpdate,
 }: BubbleJapTooltipProps) {
@@ -228,23 +232,39 @@ export function BubbleJapTooltip({
   const hasJapText = Boolean(box.japText && box.japText.trim())
   if (!showJapOverlay || isDraft || isInlineEditing || (!hasJapText && !isEditingJap)) return null
 
-  // Автоподбор базовой стороны вокруг бабла
-  const spaceRight = 1 - (currentX + currentW)
-  const spaceLeft = currentX
-  const spaceBottom = 1 - (currentY + currentH)
+  // Базовая позиция: свободное место, посчитанное централизованно в image-viewer_impl.
+  // Если его нет (например, плашка для бабла без japText) — старый резервный автоподбор по краям страницы.
+  const hasAutoPlacement =
+    Boolean(autoJapPlacement) && currentW > 0.0001 && currentH > 0.0001
 
   let positionClasses = ""
   let baseTranslate = ""
-  if (spaceRight >= 0.22) {
-    positionClasses = "left-full ml-2 top-0"
-  } else if (spaceLeft >= 0.22) {
-    positionClasses = "right-full mr-2 top-0"
-  } else if (spaceBottom >= 0.14) {
-    positionClasses = "top-full mt-2 left-1/2"
-    baseTranslate = "translateX(-50%)"
+  let autoPositionStyle: React.CSSProperties | undefined
+
+  if (hasAutoPlacement && autoJapPlacement) {
+    // Переводим нормализованную позицию страницы в проценты относительно самого бабла,
+    // потому что плашка рендерится внутри его абсолютного контейнера.
+    autoPositionStyle = {
+      left: `${((autoJapPlacement.x - currentX) / currentW) * 100}%`,
+      top: `${((autoJapPlacement.y - currentY) / currentH) * 100}%`,
+    }
   } else {
-    positionClasses = "bottom-full mb-2 left-1/2"
-    baseTranslate = "translateX(-50%)"
+    // Резервный автоподбор базовой стороны вокруг бабла по свободному месту до краёв страницы
+    const spaceRight = 1 - (currentX + currentW)
+    const spaceLeft = currentX
+    const spaceBottom = 1 - (currentY + currentH)
+
+    if (spaceRight >= 0.22) {
+      positionClasses = "left-full ml-2 top-0"
+    } else if (spaceLeft >= 0.22) {
+      positionClasses = "right-full mr-2 top-0"
+    } else if (spaceBottom >= 0.14) {
+      positionClasses = "top-full mt-2 left-1/2"
+      baseTranslate = "translateX(-50%)"
+    } else {
+      positionClasses = "bottom-full mb-2 left-1/2"
+      baseTranslate = "translateX(-50%)"
+    }
   }
 
   const transformParts: string[] = []
@@ -282,6 +302,7 @@ export function BubbleJapTooltip({
         positionClasses,
       ].join(" ")}
       style={{
+        ...autoPositionStyle,
         fontSize: "17px",
         lineHeight: 1.4,
         fontFamily: "'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', 'Noto Sans JP', sans-serif",

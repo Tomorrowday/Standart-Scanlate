@@ -6,6 +6,7 @@ from schemas import SpotCleanRequest
 from routers.pages_handlers.common import _backup_clean_file_if_exists
 from services.cleaner import spot_clean_region, load_image_cv2, save_image_cv2, release_vram
 from services.page_service import get_active_global_settings
+from ml.models import ml
 
 
 def spot_clean_page(page_id: int, req: SpotCleanRequest):
@@ -48,6 +49,7 @@ def spot_clean_page(page_id: int, req: SpotCleanRequest):
     }
     cfg = get_active_global_settings()
     clean_model_name = cfg.get("clean_model") or "anime-manga-big-lama.pt"
+    ml.lama_downscale = bool(cfg.get("lama_downscale", 0))
 
     try:
         used_method = spot_clean_region(image, box_dict, method=req.method or "auto", clean_model_name=clean_model_name)

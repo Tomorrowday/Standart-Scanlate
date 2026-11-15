@@ -56,7 +56,7 @@ async function fetchAnalyzeWithRetry(
   titleId?: number | null,
   nlpMode: string = "auto",
   retries: number = 2
-): Promise<TokenSpan[]> {
+): Promise<{ tokens: TokenSpan[]; isBuilding: boolean }> {
   await acquireSlot()
   try {
     let lastError: unknown = null
@@ -71,11 +71,15 @@ async function fetchAnalyzeWithRetry(
             nlp_mode: nlpMode,
           }),
         })
-        const data = await handleApiResponse<{ success: boolean; tokens: TokenSpan[] }>(
-          res,
-          "Ошибка морфологического разбора бабла"
-        )
-        return data.tokens || []
+        const data = await handleApiResponse<{
+          success: boolean
+          tokens: TokenSpan[]
+          is_building?: boolean
+        }>(res, "Ошибка морфологического разбора бабла")
+        return {
+          tokens: data.tokens || [],
+          isBuilding: Boolean(data.is_building),
+        }
       } catch (err) {
         lastError = err
         if (attempt < retries) {
@@ -109,10 +113,10 @@ export async function analyzeBubbleJapText(
 
   const requestPromise = (async (): Promise<TokenSpan[]> => {
     try {
-      const tokens = await fetchAnalyzeWithRetry(trimmed, titleId, nlpMode, 2)
+      const { tokens, isBuilding } = await fetchAnalyzeWithRetry(trimmed, titleId, nlpMode, 2)
 
-      // Кэшируем только осмысленный результат
-      if (tokens.length > 0) {
+      // Кэшируем только осмысленный результат и только когда не идёт фоновая сборка словаря
+      if (tokens.length > 0 && !isBuilding) {
         if (analyzeCache.size > 600) {
           analyzeCache.clear()
         }

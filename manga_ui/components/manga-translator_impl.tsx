@@ -108,6 +108,7 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
     setBrushSize,
     setIsApplyingChapterFont: settings.setIsApplyingChapterFont,
     recordCleanAction: blocks.recordCleanAction,
+    discardLastSnapshot: blocks.discardLastSnapshot,
     handlePageStatusUpdate: pageState.handlePageStatusUpdate,
   })
 

@@ -5,7 +5,7 @@
 import { useState, useRef, useCallback } from "react"
 import type { TextBlock, PageItem, PageStatus, TitleSettings } from "@/lib/types"
 import { insertBlockInMangaOrder } from "@/lib/typeset"
-import { savePageBlocks, runSpotClean } from "@/lib/api"
+import { savePageBlocks, runSpotClean, runOcr } from "@/lib/api"
 import { useBlocksHistory } from "./use-blocks-history"
 import type { DrawRect, UsePageBlocksReturn } from "./use-page-blocks"
 
@@ -337,6 +337,49 @@ export function usePageBlocks(
       })
       setSelectedId(id)
       selectedIdRef.current = id
+
+      // Авто-OCR сразу после рисования бабла. Запускается здесь, а не из
+      // useEffect в карточке, — иначе гонка с сохранением/сменой страницы.
+      const targetPageId = currentPageRef.current?.id
+      if (targetPageId) {
+        runOcr(
+          targetPageId,
+          newBlock.x,
+          newBlock.y,
+          newBlock.width,
+          newBlock.height,
+          rot,
+          id,
+          newBlock.class_id ?? 0
+        )
+          .then((ocrText) => {
+            // Если пользователь уже переключил страницу — игнорируем ответ
+            if (currentPageRef.current?.id !== targetPageId) return
+            // Проверяем, что блок не был удалён пользователем, пока шёл OCR
+            if (!textBlocksRef.current.some((b) => b.id === id)) return
+
+            isDirtyRef.current = true
+            setTextBlocks((prev) => {
+              const next = prev.map((b) => {
+                if (b.id !== id) return b
+                // Если пользователь уже сам вписал japText вручную — не затираем
+                if (b.japText && b.japText.trim().length > 0) return b
+                const nextStatus: TextBlock["status"] =
+                  b.status === "translated" ? "translated" : "ocr-done"
+                return {
+                  ...b,
+                  japText: ocrText,
+                  status: nextStatus,
+                }
+              })
+              textBlocksRef.current = next
+              return next
+            })
+          })
+          .catch((err) => {
+            console.warn("Авто-OCR нового бабла не удался:", err)
+          })
+      }
     },
     [globalSettings, pushUndoSnapshot]
   )
@@ -365,6 +408,7 @@ export function usePageBlocks(
     undo: handleUndo,
     redo: handleRedo,
     recordCleanAction,
+    discardLastSnapshot,
     saveBlocks,
     saveBlocksExplicit,
     setNewPageBlocks,

@@ -41,10 +41,13 @@ def analyze_bubble_endpoint(req: DictAnalyzeRequest):
         title_id=req.title_id,
         nlp_mode=mode,
     )
+    status = get_dictionary_status()
+    is_building = bool(status.get("build_progress", {}).get("is_building"))
     return {
         "success": True,
         "title_id": req.title_id,
         "tokens": tokens,
+        "is_building": is_building,
     }
 
 

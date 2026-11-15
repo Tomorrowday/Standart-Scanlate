@@ -77,13 +77,6 @@ export function BlockCardHeader({
     }
   }, [pageId, ocrLoading, block.id, block.x, block.y, block.width, block.height, block.rotation, block.class_id, block.status, onChange])
 
-  useEffect(() => {
-    if (block.status === "new" && pageId && !block.japText) {
-      handleOcr()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // Подписка на глобальное событие хоткея одиночного OCR [O]
   useEffect(() => {
     const onHotkeyOcr = (e: Event) => {

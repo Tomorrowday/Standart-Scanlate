@@ -227,3 +227,60 @@ export function reflowFromManualLines(
 
   return normalizedLines.join("\n") + (forceSingleLine ? FORCED_SINGLE_LINE_MARKER : "")
 }
+
+/**
+ * Проецирует строки, посчитанные по UPPERCASE-тексту, обратно на исходный
+ * регистр. Идём по символам отрисованной строки и синхронно вычитываем
+ * соответствующие символы из исходного текста. Вставленные движком мягкие
+ * дефисы сохраняются, чтобы ручная правка могла их корректно снять.
+ */
+export function projectLinesToOriginalCase(rawText: string, renderedLines: string[]): string[] | null {
+  let pos = 0
+  const out: string[] = []
+
+  const skipWhitespace = () => {
+    while (pos < rawText.length && /\s/.test(rawText[pos])) pos++
+  }
+
+  for (const renderedLine of renderedLines) {
+    let lineOut = ""
+    let pendingSpace = false
+
+    for (let i = 0; i < renderedLine.length; i++) {
+      const ch = renderedLine[i]
+
+      if (/\s/.test(ch)) {
+        if (lineOut.length > 0) pendingSpace = true
+        continue
+      }
+
+      skipWhitespace()
+
+      if (pendingSpace) {
+        lineOut += " "
+        pendingSpace = false
+      }
+
+      if (ch === "-" && rawText[pos] !== "-") {
+        // Мягкий слоговой перенос, которого нет в исходном тексте
+        lineOut += "-"
+        continue
+      }
+
+      if (pos >= rawText.length) return null
+
+      const rawCh = rawText[pos]
+      if (rawCh.toLowerCase() !== ch.toLowerCase()) return null
+
+      lineOut += rawCh
+      pos++
+    }
+
+    out.push(lineOut)
+  }
+
+  skipWhitespace()
+  if (pos < rawText.length) return null
+
+  return out
+}

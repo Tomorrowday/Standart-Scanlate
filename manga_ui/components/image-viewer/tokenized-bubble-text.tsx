@@ -7,7 +7,7 @@
 
 "use client"
 
-import React, { useState, useRef } from "react"
+import React, { useState, useRef, useEffect } from "react"
 import {
   useFloating,
   autoUpdate,
@@ -36,6 +36,11 @@ export interface TokenizedBubbleTextProps {
   onSetSpeaker?: (speakerName: string) => void
   onStartEdit?: (e: React.MouseEvent) => void
 }
+
+// Модульный координатор активной карточки словаря:
+// одновременно открыта максимум одна подсказка, поэтому при наведении на новое слово
+// предыдущая закрывается синхронно, а не висит второй плашкой рядом.
+let closeActiveTooltip: (() => void) | null = null
 
 const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   warodai: {
@@ -78,9 +83,35 @@ function InteractiveTokenSpan({
   const [justSaved, setJustSaved] = useState(false)
   const ruInputRef = useRef<HTMLInputElement>(null)
 
+  // Собственный «закрыватель» регистрируется в модульном координаторе при открытии.
+  const closeSelfRef = useRef<(() => void) | null>(null)
+  if (!closeSelfRef.current) {
+    closeSelfRef.current = () => setIsOpen(false)
+  }
+
+  // Снимаем регистрацию при размонтировании, чтобы не дёргать мёртвый компонент.
+  useEffect(() => {
+    return () => {
+      if (closeActiveTooltip === closeSelfRef.current) {
+        closeActiveTooltip = null
+      }
+    }
+  }, [])
+
   const { refs, floatingStyles, context } = useFloating({
     open: isOpen,
     onOpenChange: (open) => {
+      const self = closeSelfRef.current
+      if (open) {
+        // Сначала синхронно гасим чужую открытую карточку — второй словарь не появляется.
+        if (closeActiveTooltip && closeActiveTooltip !== self) {
+          closeActiveTooltip()
+        }
+        closeActiveTooltip = self
+      } else if (closeActiveTooltip === self) {
+        closeActiveTooltip = null
+      }
+
       setIsOpen(open)
       if (!open) {
         setIsAddingGlossary(false)
@@ -89,7 +120,8 @@ function InteractiveTokenSpan({
     placement: "top-start",
     whileElementsMounted: autoUpdate,
     middleware: [
-      offset(8),
+      // Подсказка отодвинута от текста, чтобы не перехватывать курсор на следующей строке
+      offset(14),
       flip({ fallbackAxisSideDirection: "end", padding: 12 }),
       shift({ padding: 12 }),
     ],
@@ -97,7 +129,8 @@ function InteractiveTokenSpan({
 
   const hover = useHover(context, {
     move: false,
-    delay: { open: 70, close: 160 },
+    // Быстрое закрытие: при переходе на соседнее слово старый тултип успевает уйти
+    delay: { open: 70, close: 75 },
     handleClose: safePolygon({ blockPointerEvents: true }),
   })
   const focus = useFocus(context)

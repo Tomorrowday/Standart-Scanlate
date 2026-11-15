@@ -87,7 +87,16 @@ export async function executeOcrAllBlocks(ctx: PagePipelineContext): Promise<voi
     const currentBlocks = [...textBlocks]
 
     const ocrResults = await runConcurrent(currentBlocks, 3, async (b) => {
-      const text = await runOcr(currentPage.id, b.x, b.y, b.width, b.height, b.rotation || 0)
+      const text = await runOcr(
+        currentPage.id,
+        b.x,
+        b.y,
+        b.width,
+        b.height,
+        b.rotation || 0,
+        b.id,
+        b.class_id ?? 0
+      )
       return {
         ...b,
         japText: text,

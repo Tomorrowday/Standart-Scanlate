@@ -61,12 +61,21 @@ export function BlockCardHeader({
     if (!pageId || ocrLoading) return
     setOcrLoading(true)
     try {
-      const text = await runOcr(pageId, block.x, block.y, block.width, block.height, block.rotation || 0)
+      const text = await runOcr(
+        pageId,
+        block.x,
+        block.y,
+        block.width,
+        block.height,
+        block.rotation || 0,
+        block.id,
+        block.class_id ?? 0
+      )
       onChange({ japText: text, status: block.status === "translated" ? "translated" : "ocr-done" })
     } finally {
       setOcrLoading(false)
     }
-  }, [pageId, ocrLoading, block.x, block.y, block.width, block.height, block.rotation, block.status, onChange])
+  }, [pageId, ocrLoading, block.id, block.x, block.y, block.width, block.height, block.rotation, block.class_id, block.status, onChange])
 
   useEffect(() => {
     if (block.status === "new" && pageId && !block.japText) {

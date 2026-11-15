@@ -11,6 +11,7 @@ from ml.models import ml
 from logger import logger
 
 from services.detector_ops.box_expander import expand_box_to_bubble
+from services.detector_ops.overlap_resolver import resolve_overlapping_bubbles
 from services.detector_ops.reading_order import sort_manga_reading_order
 
 
@@ -80,8 +81,12 @@ def detect_and_filter_bubbles(
             int_boxes.append((ix1, iy1, ix2, iy2, cls_id))
 
     boxes: List[Dict[str, Any]] = []
+
+    # 1. Разводим перекрывающиеся сдвоенные бабблы до расширения
+    int_boxes = resolve_overlapping_bubbles(gray_img, int_boxes)
     plain_coords = [(b[0], b[1], b[2], b[3]) for b in int_boxes]
 
+    expanded_int_boxes: List[Tuple[int, int, int, int, int]] = []
     for idx, (ix1, iy1, ix2, iy2, cls_id) in enumerate(int_boxes):
         other_boxes = [b for j, b in enumerate(plain_coords) if j != idx]
 
@@ -90,6 +95,12 @@ def detect_and_filter_bubbles(
         else:
             ex1, ey1, ex2, ey2 = ix1, iy1, ix2, iy2
 
+        expanded_int_boxes.append((ex1, ey1, ex2, ey2, cls_id))
+
+    # 2. Повторно проверяем на случай касания после дотягивания до овала
+    expanded_int_boxes = resolve_overlapping_bubbles(gray_img, expanded_int_boxes)
+
+    for ex1, ey1, ex2, ey2, cls_id in expanded_int_boxes:
         px1 = max(0.0, ex1 / img_width)
         py1 = max(0.0, ey1 / img_height)
         px2 = min(1.0, ex2 / img_width)

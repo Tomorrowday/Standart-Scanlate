@@ -4,21 +4,19 @@
 "use client"
 
 import { useState, useRef } from "react"
-import type { PageItem, TextBlock } from "@/lib/types"
+import type { PageItem } from "@/lib/types"
 import {
   runPageAutoDetect,
   runCleanPage,
-  saveTranslatedPage,
   runTranslateChapter,
-  getPageDetails,
-  getPageCleanImageUrl,
-  getPageImageUrl,
-  getPageBlocks,
-  exportChapterScriptToFolder,
-  uploadChapterScript,
-  pickAndImportChapterScript,
 } from "@/lib/api"
-import { loadImage, bakePageBlob, mapDbBlockToTextBlock } from "@/lib/typeset"
+import {
+  exportBakePageOp,
+  exportChapterScriptOp,
+  importChapterScriptFileOp,
+  importChapterScriptOp,
+  type BatchChapterOpsContext,
+} from "./pipelines/batch-chapter-ops"
 import type {
   BatchChapterActionsProps,
   BatchChapterActionsController,
@@ -163,143 +161,28 @@ export function useBatchChapterActions({
     }
   }
 
-  const exportAll = async () => {
-    if (pages.length === 0 || isRunning) return
+  const buildOpsCtx = (): BatchChapterOpsContext => ({
+    pages,
+    chapterId,
+    titleDefaultFontSize,
+    ensureCurrentPageSaved,
+    setProgress,
+    setJustFinished,
+    fileInputRef,
+    onPageStatusUpdate,
+    onCompleteBatch,
+    onRefreshCurrent,
+  })
 
-    await ensureCurrentPageSaved()
+  const exportAll = () =>
+    runBatch("export", (page) => exportBakePageOp(buildOpsCtx(), page))
 
-    await runBatch("export", async (page) => {
-      const fresh = (await getPageDetails(page.id)) || page
+  const handleExportScript = () => exportChapterScriptOp(buildOpsCtx())
 
-      const dbBlocks = await getPageBlocks(page.id)
-      const blocks: TextBlock[] = dbBlocks.map((b: any) => mapDbBlockToTextBlock(b))
+  const handleImportClick = () => importChapterScriptOp(buildOpsCtx(), isRunning)
 
-      // Как и одиночный Export Page: если клина ещё нет, но есть текст, сначала
-      // очищаем скан, иначе перевод запечётся поверх японского текста.
-      let cleanPath = fresh.clean_path
-      if (!cleanPath && blocks.length > 0) {
-        const cleanRes = await runCleanPage(page.id, "auto")
-        if (!cleanRes || cleanRes.success === false) {
-          throw new Error(cleanRes?.error || "Ошибка клина")
-        }
-        cleanPath = cleanRes.clean_path
-        onPageStatusUpdate?.(page.id, cleanRes.page_status || "cleaned", cleanRes.clean_path)
-      }
-
-      const baseImgUrl = cleanPath
-        ? `${getPageCleanImageUrl(page.id)}?t=${Date.now()}`
-        : getPageImageUrl(page.id)
-
-      const baseImg = await loadImage(baseImgUrl)
-      const blob = await bakePageBlob(baseImg, blocks, titleDefaultFontSize)
-
-      if (!blob) {
-        throw new Error("Не удалось сформировать PNG")
-      }
-      const res = await saveTranslatedPage(page.id, blob)
-      if (!res || res.success === false) {
-        throw new Error(res?.error || "Ошибка сохранения страницы")
-      }
-      onPageStatusUpdate?.(page.id, "done")
-    })
-  }
-
-  const handleExportScript = async () => {
-    if (!chapterId) return
-    await ensureCurrentPageSaved()
-
-    setProgress({ action: "script-export", done: 0, total: 1, label: "Saving JSON to chapter folder..." })
-    try {
-      const res = await exportChapterScriptToFolder(chapterId)
-      setJustFinished("script-export")
-      setTimeout(() => setJustFinished(null), 2500)
-      alert(`Скрипт главы успешно сохранён в папку:\n${res.saved_path}`)
-    } catch (e) {
-      alert("Ошибка сохранения скрипта: " + String(e))
-    } finally {
-      setProgress(null)
-    }
-  }
-
-  const handleImportClick = async () => {
-    if (!chapterId || isRunning) return
-    await ensureCurrentPageSaved()
-
-    setProgress({ action: "script-import", done: 0, total: 1, label: "Checking chapter folder for dialogues JSON..." })
-    try {
-      const res = await pickAndImportChapterScript(chapterId)
-
-      if (res.cancelled) {
-        setProgress(null)
-        return
-      }
-
-      if (res.success) {
-        pages.forEach((p) => {
-          if (p.status !== "done") {
-            onPageStatusUpdate?.(p.id, "translated")
-          }
-        })
-
-        const msg = [
-          res.auto_found ? "⚡ Файл найден автоматически в папке главы!" : null,
-          `Файл: ${res.file_path}`,
-          `Успешно импортировано реплик: ${res.updated_count}`,
-          res.updated_speakers_count ? `Распознано спикеров: ${res.updated_speakers_count}` : null,
-        ]
-          .filter(Boolean)
-          .join("\n")
-
-        alert(msg)
-        setJustFinished("script-import")
-        setTimeout(() => setJustFinished(null), 2000)
-        onCompleteBatch?.()
-        onRefreshCurrent()
-      } else {
-        fileInputRef.current?.click()
-      }
-    } catch (err) {
-      console.warn("Диалог бэкенда не сработал, открываем браузерный выбор файла:", err)
-      fileInputRef.current?.click()
-    } finally {
-      setProgress(null)
-    }
-  }
-
-  const handleImportScriptFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !chapterId) return
-
-    await ensureCurrentPageSaved()
-
-    setProgress({ action: "script-import", done: 0, total: 1, label: "Importing translations & speakers..." })
-    try {
-      const res = await uploadChapterScript(chapterId, file)
-      pages.forEach((p) => {
-        if (p.status !== "done") {
-          onPageStatusUpdate?.(p.id, "translated")
-        }
-      })
-
-      const msg = [
-        `Успешно импортировано реплик: ${res.updated_count}`,
-        res.updated_speakers_count ? `Распознано спикеров: ${res.updated_speakers_count}` : null,
-      ]
-        .filter(Boolean)
-        .join("\n")
-
-      alert(msg)
-      setJustFinished("script-import")
-      setTimeout(() => setJustFinished(null), 2000)
-    } catch (err) {
-      alert("Ошибка импорта: " + String(err))
-    } finally {
-      setProgress(null)
-      if (fileInputRef.current) fileInputRef.current.value = ""
-      onCompleteBatch?.()
-      onRefreshCurrent()
-    }
-  }
+  const handleImportScriptFile = (e: React.ChangeEvent<HTMLInputElement>) =>
+    importChapterScriptFileOp(buildOpsCtx(), e)
 
   return {
     progress,

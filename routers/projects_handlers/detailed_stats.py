@@ -96,7 +96,7 @@ def get_all_detailed_stats():
 
 def recalculate_title_stats(title_id: int):
     """Пересчитывает реплики и слова во всех главах указанного тайтла."""
-    import routers.chapters_impl as ch_impl
+    from routers.chapters_handlers.chapter_stats import recalculate_chapter_stats
 
     with get_db() as conn:
         cur = conn.cursor()
@@ -107,7 +107,7 @@ def recalculate_title_stats(title_id: int):
     total_words = 0
 
     for ch_id in chapter_ids:
-        res = ch_impl.recalculate_chapter_stats(ch_id)
+        res = recalculate_chapter_stats(ch_id)
         total_replicas += res["replicas_count"]
         total_words += res["words_count"]
 

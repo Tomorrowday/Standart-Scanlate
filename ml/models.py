@@ -1,67 +1,38 @@
 # ml/models.py
 """
-Каркас менеджера ML-моделей (MangaOCR, YOLO, LaMa) и управления VRAM.
-Реализация: ml/models_impl.py
-Зависимости реализации: torch, numpy, PIL, gc, logging, config
+Менеджер ML-моделей (MangaOCR, YOLO, LaMa) и управление VRAM.
+Публичный фасад пакета ml.models_ops.
+Зависимости: torch, numpy, PIL, gc, logging, config
 """
 
-from typing import Optional, Dict, Any
-import torch
-import ml.models_impl as _impl
+from ml.models_ops import (
+    AccurateLamaWrapper,
+    HayaiOcrAdapter,
+    MLManager,
+    PaddleOcrVlAdapter,
+    _create_ocr_engine,
+    _get_device,
+    load_ml_models,
+    ml,
+    ml_manager,
+    release_vram,
+)
+from ml.models_ops.transformers_compat import (
+    _patch_tokenizer_config_if_needed,
+    _patch_transformers_rope_compat,
+)
 
-# Реэкспорт класса AccurateLamaWrapper для аннотаций типов
-AccurateLamaWrapper = _impl.AccurateLamaWrapper
-
-
-class MLManager:
-    """Интерфейс MLManager, делегирующий вызовы к реализации ml/models_impl.py."""
-
-    @property
-    def device(self) -> torch.device:
-        return _impl.ml.device
-
-    @property
-    def mocr(self) -> Any:
-        return _impl.ml.mocr
-
-    @property
-    def lama_downscale(self) -> bool:
-        return _impl.ml.lama_downscale
-
-    @lama_downscale.setter
-    def lama_downscale(self, value: bool) -> None:
-        _impl.ml.lama_downscale = value
-
-    def load_manga_ocr(self, model_name: str = "manga-ocr-base") -> Any:
-        return _impl.ml.load_manga_ocr(model_name)
-
-    def get_ocr(self, model_name: Optional[str] = None) -> Any:
-        return _impl.ml.get_ocr(model_name)
-
-    def get_yolo(self, model_name: Optional[str] = None) -> Any:
-        return _impl.ml.get_yolo(model_name)
-
-    def load_cleaner(self, name: str = "anime-manga-big-lama.pt") -> Any:
-        return _impl.ml.load_cleaner(name)
-
-    def release_vram(self) -> Dict[str, float]:
-        return _impl.ml.release_vram()
-
-    def unload_all(self) -> None:
-        _impl.ml.unload_all()
-
-
-def release_vram() -> Dict[str, float]:
-    """Принудительно очищает кэш видеопамяти PyTorch и сборщик мусора."""
-    return _impl.release_vram()
-
-
-def load_ml_models(preload: bool = False) -> MLManager:
-    """Точка входа инициализации ML-моделей при старте приложения."""
-    _impl.load_ml_models(preload=preload)
-    return ml
-
-
-# Глобальные синглтоны для совместимости со всеми импортами
-ml: MLManager = _impl.ml
-ml_manager: MLManager = _impl.ml_manager
+__all__ = [
+    "_get_device",
+    "release_vram",
+    "AccurateLamaWrapper",
+    "HayaiOcrAdapter",
+    "PaddleOcrVlAdapter",
+    "_create_ocr_engine",
+    "MLManager",
+    "ml",
+    "ml_manager",
+    "load_ml_models",
+    "_patch_tokenizer_config_if_needed",
+    "_patch_transformers_rope_compat",
+]

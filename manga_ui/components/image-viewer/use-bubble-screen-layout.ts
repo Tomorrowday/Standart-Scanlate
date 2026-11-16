@@ -1,21 +1,18 @@
-// manga_ui/components/image-viewer/use-bubble-screen-layout.ts
-// Экранная верстка текста бабла: метрики картинки, ожидание шрифтов, расчёт кегля и междустрочного интервала
-
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { layoutBubbleTextLines, reflowFromManualLines, projectLinesToOriginalCase, FORCED_SINGLE_LINE_MARKER } from "@/lib/typeset"
-import type { ReflowOptions } from "@/lib/typeset"
+// manga_ui/components/image-viewer/use-bubble-screen-layout.ts
+// Экранная вёрстка текста бабла: метрики картинки, ожидание шрифтов,
+// расчёт кегля, междустрочного интервала и reflow ручных переносов
+
 import type { TextBlock } from "@/lib/types"
-
-let previewCanvas: HTMLCanvasElement | null = null
-
-function getPreviewContext(): CanvasRenderingContext2D | null {
-  if (!previewCanvas && typeof document !== "undefined") {
-    previewCanvas = document.createElement("canvas")
-  }
-  return previewCanvas?.getContext("2d") ?? null
-}
+import { useEffect, useMemo, useState } from "react"
+import {
+  layoutBubbleTextLines,
+  reflowFromManualLines,
+  projectLinesToOriginalCase,
+  FORCED_SINGLE_LINE_MARKER,
+} from "@/lib/typeset"
+import type { ReflowOptions } from "@/lib/typeset"
 
 export interface BubbleReflowedState {
   storageText: string
@@ -43,6 +40,15 @@ export interface BubbleScreenLayout {
     rawInput: string,
     options?: ReflowOptions
   ) => BubbleReflowedState
+}
+
+let previewCanvas: HTMLCanvasElement | null = null
+
+function getPreviewContext(): CanvasRenderingContext2D | null {
+  if (!previewCanvas && typeof document !== "undefined") {
+    previewCanvas = document.createElement("canvas")
+  }
+  return previewCanvas?.getContext("2d") ?? null
 }
 
 export function useBubbleScreenLayout({

@@ -4,19 +4,16 @@
 // - свободное перетаскивание (Drag) за шапку с сохранением смещения japOffset
 // - прямое редактирование японского текста (по кнопке карандаша или двойному клику по тексту)
 // - встроенный морфологический разбор и локальный словарь (Warodai + JMdict + Глоссарий тайтла)
+// Вся логика состояния и расчётов вынесена в use-jap-tooltip-controller.ts
 
 "use client"
 
-import React, { useState, useRef, useEffect, useCallback } from "react"
+import React from "react"
 import { GripHorizontal, Pencil, Check, X, RotateCcw } from "lucide-react"
 import type { TextBlock } from "@/lib/types"
-import {
-  analyzeBubbleJapText,
-  DICT_GLOSSARY_UPDATED_EVENT,
-  type TokenSpan,
-} from "@/lib/api/dictionary"
 import { TokenizedBubbleText } from "./tokenized-bubble-text"
 import type { JapPlatePlacement } from "./jap-overlay-placement"
+import { useJapTooltipController } from "./use-jap-tooltip-controller"
 
 export interface BubbleJapTooltipProps {
   box: TextBlock
@@ -52,241 +49,22 @@ export function BubbleJapTooltip({
   onSelect,
   onUpdate,
 }: BubbleJapTooltipProps) {
-  const [isEditingJap, setIsEditingJap] = useState(false)
-  const [draftJap, setDraftJap] = useState(box.japText || "")
-  const [isDragging, setIsDragging] = useState(false)
-  const [liveOffset, setLiveOffset] = useState<{ x: number; y: number } | null>(null)
-  const [tokens, setTokens] = useState<TokenSpan[] | null>(null)
-  const [glossaryTick, setGlossaryTick] = useState(0)
+  const ctrl = useJapTooltipController({
+    box,
+    titleId,
+    showJapOverlay,
+    isDraft,
+    isInlineEditing,
+    currentX,
+    currentY,
+    currentW,
+    currentH,
+    autoJapPlacement,
+    onSelect,
+    onUpdate,
+  })
 
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const dragSessionRef = useRef<{
-    startMouseX: number
-    startMouseY: number
-    startOffsetX: number
-    startOffsetY: number
-  } | null>(null)
-
-  // Синхронизируем локальный черновик при внешнем обновлении japText (OCR / Undo / Redo)
-  useEffect(() => {
-    if (!isEditingJap) {
-      setDraftJap(box.japText || "")
-    }
-  }, [box.japText, isEditingJap])
-
-  // Подписка на глобальное событие обновления глоссария тайтла
-  useEffect(() => {
-    const handleGlossaryUpdated = () => setGlossaryTick((t) => t + 1)
-    window.addEventListener(DICT_GLOSSARY_UPDATED_EVENT, handleGlossaryUpdated)
-    return () => window.removeEventListener(DICT_GLOSSARY_UPDATED_EVENT, handleGlossaryUpdated)
-  }, [])
-
-  // Запрос морфологического разбора и словарных статей при показе плашки JP
-  useEffect(() => {
-    const raw = (box.japText || "").trim()
-    if (!showJapOverlay || isDraft || !raw) {
-      setTokens(null)
-      return
-    }
-
-    let cancelled = false
-    analyzeBubbleJapText(raw, titleId)
-      .then((res) => {
-        if (!cancelled) setTokens(res)
-      })
-      .catch(() => {
-        if (!cancelled) setTokens(null)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [showJapOverlay, isDraft, box.japText, titleId, glossaryTick])
-
-  // Автофокус и установка курсора в конец при открытии редактора
-  useEffect(() => {
-    if (isEditingJap && textareaRef.current) {
-      const ta = textareaRef.current
-      ta.focus()
-      const len = ta.value.length
-      ta.setSelectionRange(len, len)
-    }
-  }, [isEditingJap])
-
-  const savedOffset = box.japOffset ?? { x: 0, y: 0 }
-  const activeOffset = liveOffset ?? savedOffset
-  const hasCustomOffset = Math.abs(activeOffset.x) > 1 || Math.abs(activeOffset.y) > 1
-
-  // Обработка глобального перетаскивания плашки за шапку
-  useEffect(() => {
-    if (!isDragging) return
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const session = dragSessionRef.current
-      if (!session) return
-
-      const rawDx = e.clientX - session.startMouseX
-      const rawDy = e.clientY - session.startMouseY
-
-      setLiveOffset({
-        x: Math.round(session.startOffsetX + rawDx),
-        y: Math.round(session.startOffsetY + rawDy),
-      })
-    }
-
-    const handleMouseUp = (e: MouseEvent) => {
-      const session = dragSessionRef.current
-      dragSessionRef.current = null
-      setIsDragging(false)
-
-      if (!session) return
-      const finalX = Math.round(session.startOffsetX + (e.clientX - session.startMouseX))
-      const finalY = Math.round(session.startOffsetY + (e.clientY - session.startMouseY))
-
-      setLiveOffset(null)
-      if (Math.abs(finalX - session.startOffsetX) > 1 || Math.abs(finalY - session.startOffsetY) > 1) {
-        onUpdate?.(box.id, { japOffset: { x: finalX, y: finalY } })
-      }
-    }
-
-    window.addEventListener("mousemove", handleMouseMove)
-    window.addEventListener("mouseup", handleMouseUp)
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove)
-      window.removeEventListener("mouseup", handleMouseUp)
-    }
-  }, [isDragging, box.id, onUpdate])
-
-  const handleHeaderMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return
-    e.stopPropagation()
-    e.preventDefault()
-    onSelect(box.id)
-
-    dragSessionRef.current = {
-      startMouseX: e.clientX,
-      startMouseY: e.clientY,
-      startOffsetX: savedOffset.x,
-      startOffsetY: savedOffset.y,
-    }
-    setLiveOffset(savedOffset)
-    setIsDragging(true)
-  }
-
-  const handleResetOffset = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setLiveOffset(null)
-    onUpdate?.(box.id, { japOffset: { x: 0, y: 0 } })
-  }
-
-  const startEditingJap = (e?: React.MouseEvent) => {
-    e?.stopPropagation()
-    onSelect(box.id)
-    setDraftJap(box.japText || "")
-    setIsEditingJap(true)
-  }
-
-  const commitJapEdit = useCallback(() => {
-    setIsEditingJap(false)
-    const trimmed = draftJap.trim()
-    const prevTrimmed = (box.japText || "").trim()
-    if (trimmed === prevTrimmed) return
-
-    const nextStatus =
-      box.status === "translated" || Boolean(box.rusText && box.rusText.trim())
-        ? "translated"
-        : trimmed
-          ? "ocr-done"
-          : "new"
-
-    onUpdate?.(box.id, {
-      japText: trimmed,
-      status: nextStatus,
-    })
-  }, [draftJap, box.id, box.japText, box.rusText, box.status, onUpdate])
-
-  const cancelJapEdit = (e?: React.MouseEvent) => {
-    e?.stopPropagation()
-    setDraftJap(box.japText || "")
-    setIsEditingJap(false)
-  }
-
-  const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    e.stopPropagation()
-
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      commitJapEdit()
-      return
-    }
-
-    if (e.key === "Escape") {
-      e.preventDefault()
-      setDraftJap(box.japText || "")
-      setIsEditingJap(false)
-    }
-  }
-
-  const hasJapText = Boolean(box.japText && box.japText.trim())
-  if (!showJapOverlay || isDraft || isInlineEditing || (!hasJapText && !isEditingJap)) return null
-
-  // Позиция плашки задаётся в нормализованных координатах страницы (не внутри
-  // повёрнутого контейнера бабла). Поэтому при вращении бабла плашка не уезжает
-  // по дуге, а текст всегда остаётся ровным и чётким.
-  const hasAutoPlacement =
-    Boolean(autoJapPlacement) && currentW > 0.0001 && currentH > 0.0001
-
-  let baseTranslate = ""
-  let autoPositionStyle: React.CSSProperties
-
-  if (hasAutoPlacement && autoJapPlacement) {
-    autoPositionStyle = {
-      left: `${autoJapPlacement.x * 100}%`,
-      top: `${autoJapPlacement.y * 100}%`,
-    }
-  } else {
-    // Резервный автоподбор базовой стороны вокруг бабла по свободному месту до краёв страницы
-    const spaceRight = 1 - (currentX + currentW)
-    const spaceLeft = currentX
-    const spaceBottom = 1 - (currentY + currentH)
-
-    if (spaceRight >= 0.22) {
-      autoPositionStyle = {
-        left: `${(currentX + currentW) * 100}%`,
-        top: `${currentY * 100}%`,
-      }
-    } else if (spaceLeft >= 0.22) {
-      autoPositionStyle = {
-        right: `${(1 - currentX) * 100}%`,
-        top: `${currentY * 100}%`,
-      }
-    } else if (spaceBottom >= 0.14) {
-      autoPositionStyle = {
-        left: `${(currentX + currentW / 2) * 100}%`,
-        top: `${(currentY + currentH) * 100}%`,
-      }
-      baseTranslate = "translateX(-50%)"
-    } else {
-      autoPositionStyle = {
-        left: `${(currentX + currentW / 2) * 100}%`,
-        bottom: `${(1 - currentY) * 100}%`,
-      }
-      baseTranslate = "translateX(-50%)"
-    }
-  }
-
-  // Только целочисленный сдвиг пользователя — никакого translate3d и вращения,
-  // иначе Chromium теряет субпиксельное сглаживание японских иероглифов.
-  const transformParts: string[] = []
-  if (baseTranslate) transformParts.push(baseTranslate)
-  const offsetX = Math.round(activeOffset.x)
-  const offsetY = Math.round(activeOffset.y)
-  if (offsetX !== 0 || offsetY !== 0) {
-    transformParts.push(`translate(${offsetX}px, ${offsetY}px)`)
-  }
-  const combinedTransform = transformParts.length > 0 ? transformParts.join(" ") : undefined
-
-  const editRows = Math.min(8, Math.max(2, draftJap.split(/\r?\n/).length))
+  if (!ctrl.isVisible) return null
 
   return (
     <div
@@ -306,29 +84,29 @@ export function BubbleJapTooltip({
         "absolute min-w-[160px] max-w-[280px] rounded-lg px-2.5 py-1.5",
         "bg-slate-950/95 text-slate-100 shadow-xl backdrop-blur-md",
         "pointer-events-auto whitespace-pre-wrap break-words",
-        isDragging || isEditingJap ? "z-50" : "z-40",
+        ctrl.isDragging || ctrl.isEditingJap ? "z-50" : "z-40",
         isSelected
           ? "border-2 border-amber-400/90 ring-2 ring-amber-400/25"
           : "border border-indigo-500/60 hover:border-indigo-400",
       ].join(" ")}
       style={{
-        ...autoPositionStyle,
+        ...ctrl.autoPositionStyle,
         fontSize: "17px",
         lineHeight: 1.4,
         fontFamily: "'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', 'Noto Sans JP', sans-serif",
         fontWeight: 500,
         fontStyle: "normal",
         textShadow: "none",
-        transform: combinedTransform,
+        transform: ctrl.combinedTransform,
       }}
     >
       {/* Шапка плашки — зона перетаскивания (Drag Handle) и быстрых кнопок */}
       <div
-        onMouseDown={handleHeaderMouseDown}
-        onDoubleClick={handleResetOffset}
+        onMouseDown={ctrl.handleHeaderMouseDown}
+        onDoubleClick={ctrl.handleResetOffset}
         className={[
           "mb-1 flex items-center justify-between gap-1.5 border-b border-slate-800/80 pb-1 text-[10px] font-sans font-bold text-indigo-300 select-none",
-          isDragging ? "cursor-grabbing" : "cursor-grab",
+          ctrl.isDragging ? "cursor-grabbing" : "cursor-grab",
         ].join(" ")}
       >
         <div className="flex items-center gap-1 min-w-0">
@@ -343,10 +121,10 @@ export function BubbleJapTooltip({
           className="flex items-center gap-0.5 shrink-0"
           onMouseDown={(e) => e.stopPropagation()}
         >
-          {hasCustomOffset && (
+          {ctrl.hasCustomOffset && (
             <button
               type="button"
-              onClick={handleResetOffset}
+              onClick={ctrl.handleResetOffset}
               className="rounded p-0.5 text-slate-400 hover:bg-slate-800 hover:text-amber-300 transition-colors"
               aria-label="Сбросить позицию"
             >
@@ -354,10 +132,10 @@ export function BubbleJapTooltip({
             </button>
           )}
 
-          {!isEditingJap ? (
+          {!ctrl.isEditingJap ? (
             <button
               type="button"
-              onClick={startEditingJap}
+              onClick={ctrl.startEditingJap}
               className="rounded p-0.5 text-slate-400 hover:bg-slate-800 hover:text-indigo-300 transition-colors"
               aria-label="Редактировать японский текст"
             >
@@ -370,7 +148,7 @@ export function BubbleJapTooltip({
                 onMouseDown={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
-                  commitJapEdit()
+                  ctrl.commitJapEdit()
                 }}
                 className="rounded p-0.5 text-emerald-400 hover:bg-emerald-950/80 hover:text-emerald-200 transition-colors"
                 aria-label="Сохранить"
@@ -381,7 +159,7 @@ export function BubbleJapTooltip({
                 type="button"
                 onMouseDown={(e) => {
                   e.preventDefault()
-                  cancelJapEdit(e)
+                  ctrl.cancelJapEdit(e)
                 }}
                 className="rounded p-0.5 text-rose-400 hover:bg-rose-950/80 hover:text-rose-200 transition-colors"
                 aria-label="Отменить"
@@ -394,23 +172,23 @@ export function BubbleJapTooltip({
       </div>
 
       {/* Тело плашки: интерактивный токенизированный текст со словарём ИЛИ режим редактирования */}
-      {!isEditingJap ? (
+      {!ctrl.isEditingJap ? (
         <TokenizedBubbleText
           japText={box.japText || ""}
-          tokens={tokens}
+          tokens={ctrl.tokens}
           titleId={titleId}
-          onStartEdit={startEditingJap}
+          onStartEdit={ctrl.startEditingJap}
           onSetSpeaker={(speakerName) => onUpdate?.(box.id, { speaker: speakerName })}
         />
       ) : (
         <div className="space-y-1">
           <textarea
-            ref={textareaRef}
-            value={draftJap}
-            rows={editRows}
-            onChange={(e) => setDraftJap(e.target.value)}
-            onKeyDown={handleTextareaKeyDown}
-            onBlur={commitJapEdit}
+            ref={ctrl.textareaRef}
+            value={ctrl.draftJap}
+            rows={ctrl.editRows}
+            onChange={(e) => ctrl.setDraftJap(e.target.value)}
+            onKeyDown={ctrl.handleTextareaKeyDown}
+            onBlur={ctrl.commitJapEdit}
             className="w-full min-w-[180px] resize-y rounded border border-indigo-500/80 bg-slate-900 px-1.5 py-1 text-[16px] leading-snug text-white outline-none focus:ring-1 focus:ring-indigo-400"
             style={{
               fontFamily: "'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', 'Noto Sans JP', sans-serif",

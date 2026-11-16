@@ -19,6 +19,7 @@ WEIGHTS_DIR: Path = _impl.WEIGHTS_DIR
 CACHE_DIR: Path = _impl.CACHE_DIR
 DETECT_MODELS_DIR: Path = _impl.DETECT_MODELS_DIR
 CLEAN_MODELS_DIR: Path = _impl.CLEAN_MODELS_DIR
+OCR_MODELS_DIR: Path = _impl.OCR_MODELS_DIR
 YOLO_WEIGHTS_PATH: Path = _impl.YOLO_WEIGHTS_PATH
 
 # Настройки клина
@@ -34,6 +35,11 @@ def get_available_detectors() -> Dict[str, str]:
 def get_available_cleaners() -> Dict[str, str]:
     """Сканирует директории весов и возвращает список доступных Inpainting-моделей (LaMa)."""
     return _impl.get_available_cleaners()
+
+
+def get_available_ocr_models() -> Dict[str, str]:
+    """Сканирует weights/ocr/ и возвращает список доступных OCR-моделей."""
+    return _impl.get_available_ocr_models()
 
 
 def natural_sort_key(s: str) -> List[object]:

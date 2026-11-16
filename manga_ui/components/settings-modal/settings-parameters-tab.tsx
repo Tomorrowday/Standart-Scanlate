@@ -4,7 +4,7 @@
 
 "use client"
 
-import { Scan, Sparkles } from "lucide-react"
+import { Scan, Sparkles, ScanText } from "lucide-react"
 import { MANGA_FONTS } from "@/lib/hotkeys"
 import { OllamaStatusCard, type OllamaStatus } from "@/components/settings-modal/ollama-status-card"
 import {
@@ -17,6 +17,9 @@ export interface SettingsParametersTabProps {
   availableCleaners: Record<string, string>
   detectorModel: string
   onDetectorModelChange: (value: string) => void
+  availableOcrModels: Record<string, string>
+  ocrModel: string
+  onOcrModelChange: (value: string) => void
   cleanModel: string
   onCleanModelChange: (value: string) => void
   detectConf: number
@@ -39,6 +42,9 @@ export function SettingsParametersTab({
   availableCleaners,
   detectorModel,
   onDetectorModelChange,
+  availableOcrModels,
+  ocrModel,
+  onOcrModelChange,
   cleanModel,
   onCleanModelChange,
   detectConf,
@@ -77,6 +83,31 @@ export function SettingsParametersTab({
             className="w-56 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 outline-none focus:border-indigo-500"
           >
             {Object.entries(availableDetectors).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Модель OCR */}
+      <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-300">
+              <ScanText className="h-3.5 w-3.5 text-sky-400" />
+              Модель распознавания OCR (weights/ocr)
+            </label>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              Нейросеть для чтения текста в баблах (MangaOCR, Hayai Supernova, CPT, PaddleOCR-VL).
+            </p>
+          </div>
+
+          <select
+            value={ocrModel}
+            onChange={(e) => onOcrModelChange(e.target.value)}
+            className="w-56 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 outline-none focus:border-indigo-500"
+          >
+            {Object.entries(availableOcrModels).map(([key, label]) => (
               <option key={key} value={key}>{label}</option>
             ))}
           </select>

@@ -66,6 +66,12 @@ def get_available_cleaners_endpoint():
     return _impl.get_available_cleaners_endpoint()
 
 
+@router.get("/ocr-models")
+def get_available_ocr_models_endpoint():
+    """Список доступных моделей распознавания текста (OCR)."""
+    return _impl.get_available_ocr_models_endpoint()
+
+
 @router.get("/{title_id}/tree")
 def get_project_tree(title_id: int):
     """Дерево проекта: главы, страницы и статусы."""

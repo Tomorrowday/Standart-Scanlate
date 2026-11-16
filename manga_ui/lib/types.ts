@@ -61,6 +61,7 @@ export interface TitleSettings {
   description?: string
   default_font_size?: number
   detector_model?: string
+  ocr_model?: string
   clean_model?: string
   detect_conf?: number
   auto_oval_bubble?: boolean
@@ -73,6 +74,7 @@ export interface TitleSettings {
   show_sfx?: boolean
   dict_nlp_mode?: "auto" | "sudachi" | "electra" | "bert_large"
   available_detectors?: Record<string, string>
+  available_ocr_models?: Record<string, string>
   available_cleaners?: Record<string, string>
 }
 

@@ -32,8 +32,11 @@ class MLManager:
     def lama_downscale(self, value: bool) -> None:
         _impl.ml.lama_downscale = value
 
-    def load_manga_ocr(self) -> Any:
-        return _impl.ml.load_manga_ocr()
+    def load_manga_ocr(self, model_name: str = "manga-ocr-base") -> Any:
+        return _impl.ml.load_manga_ocr(model_name)
+
+    def get_ocr(self, model_name: Optional[str] = None) -> Any:
+        return _impl.ml.get_ocr(model_name)
 
     def get_yolo(self, model_name: Optional[str] = None) -> Any:
         return _impl.ml.get_yolo(model_name)

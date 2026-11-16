@@ -37,6 +37,10 @@ weights/clean-lama/*
 weights/detect-bubble/*
 !weights/detect-bubble/.gitkeep
 
+!weights/ocr/
+weights/ocr/*
+!weights/ocr/.gitkeep
+
 # Системные файлы и IDE
 .idea/
 .vscode/

@@ -28,6 +28,9 @@ export function SettingsModal({
 
   const [availableDetectors, setAvailableDetectors] = useState<Record<string, string>>({})
   const [availableCleaners, setAvailableCleaners] = useState<Record<string, string>>({})
+  const [availableOcrModels, setAvailableOcrModels] = useState<Record<string, string>>({
+    "manga-ocr-base": "manga-ocr-base (Default)",
+  })
 
   // Тогглы тайпсета
   const [autoOvalBubble, setAutoOvalBubble] = useState<boolean>(true)
@@ -45,6 +48,7 @@ export function SettingsModal({
 
   // Параметры моделей и шрифтов
   const [detectorModel, setDetectorModel] = useState<string>("yolo_manga.pt")
+  const [ocrModel, setOcrModel] = useState<string>("manga-ocr-base")
   const [cleanModel, setCleanModel] = useState<string>("anime-manga-big-lama.pt")
   const [detectConf, setDetectConf] = useState<number>(0.25)
   const [fontBubble, setFontBubble] = useState<string>("v_CCFaceFront")
@@ -88,8 +92,12 @@ export function SettingsModal({
           const s = res.settings
           if (s.available_detectors) setAvailableDetectors(s.available_detectors)
           if (s.available_cleaners) setAvailableCleaners(s.available_cleaners)
+          if (s.available_ocr_models && Object.keys(s.available_ocr_models).length > 0) {
+            setAvailableOcrModels(s.available_ocr_models)
+          }
 
           if (s.detector_model) setDetectorModel(s.detector_model)
+          if (s.ocr_model) setOcrModel(s.ocr_model)
           if (s.clean_model) setCleanModel(s.clean_model)
           if (s.detect_conf !== undefined) setDetectConf(s.detect_conf)
 
@@ -120,6 +128,7 @@ export function SettingsModal({
     try {
       const payload: Partial<TitleSettings> = {
         detector_model: detectorModel,
+        ocr_model: ocrModel,
         clean_model: cleanModel,
         detect_conf: detectConf,
         auto_oval_bubble: autoOvalBubble,
@@ -237,6 +246,9 @@ export function SettingsModal({
               availableCleaners={availableCleaners}
               detectorModel={detectorModel}
               onDetectorModelChange={setDetectorModel}
+              availableOcrModels={availableOcrModels}
+              ocrModel={ocrModel}
+              onOcrModelChange={setOcrModel}
               cleanModel={cleanModel}
               onCleanModelChange={setCleanModel}
               detectConf={detectConf}

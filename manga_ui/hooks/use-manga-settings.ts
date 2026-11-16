@@ -6,6 +6,7 @@ import type { TitleSettings } from "@/lib/types"
 import { getGlobalSettings, updateTitleSettings } from "@/lib/api"
 
 const DEFAULT_GLOBAL_SETTINGS: TitleSettings = {
+  ocr_model: "manga-ocr-base",
   auto_oval_bubble: true,
   default_padding: "safe",
   default_hyphenation: true,

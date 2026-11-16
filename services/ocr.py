@@ -25,6 +25,7 @@ def ocr_image_region(
     rotation: float = 0.0,
     class_id: int = 0,
     other_boxes: Optional[List[Dict[str, Any]]] = None,
+    ocr_model_name: str = "manga-ocr-base",
 ) -> str:
     """
     Вырезает область бабла (с учетом поворота) и распознает японский текст через MangaOCR.
@@ -32,5 +33,5 @@ def ocr_image_region(
     а пиксели соседних баблов (other_boxes) маскируются белым перед распознаванием.
     """
     return _impl.ocr_image_region(
-        image, x, y, width, height, rotation, class_id, other_boxes
+        image, x, y, width, height, rotation, class_id, other_boxes, ocr_model_name
     )

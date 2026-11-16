@@ -17,6 +17,7 @@ class UpdateTitleSettingsRequest(BaseModel):
     description: Optional[str] = None
     default_font_size: Optional[int] = None
     detector_model: Optional[str] = None
+    ocr_model: Optional[str] = None
     clean_model: Optional[str] = None
     detect_conf: Optional[float] = None
     auto_oval_bubble: Optional[bool] = None

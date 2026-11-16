@@ -21,6 +21,9 @@ logging.getLogger("ultralytics").setLevel(logging.ERROR)
 # Настройка аллокатора PyTorch CUDA
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "max_split_size_mb:128")
 
+# Отключение torch.compile для кастомных ядер Hayai OCR (нестабильно на Windows)
+os.environ.setdefault("HAYAI_DISABLE_COMPILE", "1")
+
 # Загружаем переменные из .env
 load_dotenv()
 
@@ -58,6 +61,9 @@ DETECT_MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 CLEAN_MODELS_DIR = WEIGHTS_DIR / "clean-lama"
 CLEAN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+OCR_MODELS_DIR = WEIGHTS_DIR / "ocr"
+OCR_MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 YOLO_WEIGHTS_PATH = WEIGHTS_DIR / "yolo_manga.pt"
 if not YOLO_WEIGHTS_PATH.exists() and (BASE_DIR / "yolo_manga.pt").exists():
@@ -103,6 +109,33 @@ def get_available_cleaners() -> Dict[str, str]:
         cleaners["anime-manga-big-lama.pt"] = "anime-manga-big-lama.pt"
 
     return cleaners
+
+
+def get_available_ocr_models() -> Dict[str, str]:
+    """
+    Сканирует папку weights/ocr/ на наличие подпапок с моделями HuggingFace
+    (содержащих config.json и model.safetensors / pytorch_model.bin).
+    """
+    ocr_models: Dict[str, str] = {
+        "manga-ocr-base": "manga-ocr-base (Default)"
+    }
+
+    if OCR_MODELS_DIR.exists():
+        subdirs = sorted(
+            [d for d in OCR_MODELS_DIR.iterdir() if d.is_dir()],
+            key=lambda p: p.name.lower(),
+        )
+        for d in subdirs:
+            has_config = (d / "config.json").exists()
+            has_weights = (
+                (d / "model.safetensors").exists()
+                or (d / "pytorch_model.bin").exists()
+                or any(d.glob("model-*.safetensors"))
+            )
+            if has_config and has_weights:
+                ocr_models[d.name] = d.name
+
+    return ocr_models
 
 
 # Настройки клина

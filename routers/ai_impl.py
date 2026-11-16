@@ -11,6 +11,7 @@ from schemas import OcrRequest, TranslationRequest, BatchTranslationRequest
 from ml.models import ml
 from services.translator import translate_single_text, translate_batch_items
 from services.ocr import ocr_image_region
+from services.page_service import get_active_global_settings
 from routers.chapters_handlers.translate_chapter import _translate_chapter_via_ollama
 
 _ocr_cache_lock = threading.Lock()
@@ -120,6 +121,8 @@ def perform_ocr(req: OcrRequest):
         ]
 
         image = _get_cached_page_image(req.page_id, str(row["file_path"]))
+        cfg = get_active_global_settings()
+        ocr_model = cfg.get("ocr_model") or "manga-ocr-base"
         text = ocr_image_region(
             image,
             req.x,
@@ -129,6 +132,7 @@ def perform_ocr(req: OcrRequest):
             rotation=req.rotation or 0.0,
             class_id=current_class_id,
             other_boxes=other_boxes,
+            ocr_model_name=ocr_model,
         )
 
         # Если блок уже сохранён в БД (например, пользователь переключил страницу во время авто-OCR),

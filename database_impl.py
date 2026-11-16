@@ -48,6 +48,7 @@ def init_db():
                 default_font_size INTEGER DEFAULT 14,
                 detector_model TEXT DEFAULT 'yolo_manga.pt',
                 clean_model TEXT DEFAULT 'anime-manga-big-lama.pt',
+                ocr_model TEXT DEFAULT 'manga-ocr-base',
                 detect_conf REAL DEFAULT 0.25,
                 auto_oval_bubble INTEGER DEFAULT 1,
                 default_padding TEXT DEFAULT 'safe',
@@ -66,6 +67,7 @@ def init_db():
             "lama_downscale INTEGER DEFAULT 0",
             "show_sfx INTEGER DEFAULT 0",
             "dict_nlp_mode TEXT DEFAULT 'auto'",
+            "ocr_model TEXT DEFAULT 'manga-ocr-base'",
         ]:
             try:
                 cursor.execute(f"ALTER TABLE global_settings ADD COLUMN {col_def}")
@@ -77,10 +79,10 @@ def init_db():
         if cursor.fetchone()[0] == 0:
             cursor.execute('''
                 INSERT INTO global_settings (
-                    id, default_font_size, detector_model, clean_model, detect_conf,
+                    id, default_font_size, detector_model, clean_model, ocr_model, detect_conf,
                     auto_oval_bubble, default_padding, default_hyphenation,
                     font_bubble, font_thought, font_sfx, lama_downscale, show_sfx, dict_nlp_mode
-                ) VALUES (1, 14, 'yolo_manga.pt', 'anime-manga-big-lama.pt', 0.25, 1, 'safe', 1, 'v_CCFaceFront', 'v_CCFaceFront', 'v_Mighty Zeo 2.0', 0, 0, 'auto')
+                ) VALUES (1, 14, 'yolo_manga.pt', 'anime-manga-big-lama.pt', 'manga-ocr-base', 0.25, 1, 'safe', 1, 'v_CCFaceFront', 'v_CCFaceFront', 'v_Mighty Zeo 2.0', 0, 0, 'auto')
             ''')
 
         # Если в БД ранее был выбран удалённый simple_lama, сбрасываем его на реальный вес

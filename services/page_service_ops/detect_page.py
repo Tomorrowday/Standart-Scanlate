@@ -33,6 +33,7 @@ def detect_page_bubbles_service(
 
     cfg = get_active_global_settings()
     detector_model = cfg.get("detector_model") or "yolo_manga.pt"
+    ocr_model = cfg.get("ocr_model") or "manga-ocr-base"
     detect_conf = conf_override if conf_override is not None else float(cfg.get("detect_conf", 0.25))
     detect_sfx = bool(cfg.get("show_sfx", 0))
 
@@ -89,6 +90,7 @@ def detect_page_bubbles_service(
                     rotation=0.0,
                     class_id=cls_id,
                     other_boxes=other_boxes,
+                    ocr_model_name=ocr_model,
                 )
                 b["jap_text"] = jap_text
                 b["status"] = "ocr-done" if jap_text else "new"

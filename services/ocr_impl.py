@@ -3,6 +3,7 @@
 
 import math
 import re
+import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
@@ -18,11 +19,17 @@ OCR_WHITE_BORDER = 12
 
 
 def normalize_ocr_japanese_text(text: str) -> str:
-    """Пост-процессинг пунктуации после распознавания."""
+    """Нормализация Юникода (NFKC) и японской пунктуации после распознавания."""
     if not text:
         return ""
 
-    cleaned = text
+    cleaned = unicodedata.normalize("NFKC", str(text))
+    cleaned = re.sub(r'[\r\n\t]+', ' ', cleaned)
+
+    # Убираем случайные пробелы между японскими символами
+    cjk_char = r'[\u4e00-\u9fff\u3040-\u30ff\u3400-\u4dbf]'
+    cleaned = re.sub(f'({cjk_char})\\s+({cjk_char})', r'\1\2', cleaned)
+
     cleaned = re.sub(r'[:：]{2,}', '……', cleaned)
     cleaned = re.sub(r'(?<!\d)[:：](?!\d)', '…', cleaned)
     cleaned = re.sub(r'\.{2,}', '…', cleaned)
@@ -255,11 +262,11 @@ def _int_crop_box(
     return x1, y1, x2, y2
 
 
-def _recognize(crop_img: Image.Image) -> str:
-    """Отправляет подготовленный кроп в MangaOCR под блокировкой MLManager."""
-    mocr_instance = ml.mocr
+def _recognize(crop_img: Image.Image, ocr_model_name: str = "manga-ocr-base") -> str:
+    """Отправляет подготовленный кроп в выбранную OCR-модель под блокировкой MLManager."""
+    ocr_instance = ml.get_ocr(ocr_model_name)
     with ml.lock, torch.inference_mode():
-        raw_text = mocr_instance(crop_img).strip()
+        raw_text = ocr_instance(crop_img).strip()
     return normalize_ocr_japanese_text(raw_text)
 
 
@@ -272,6 +279,7 @@ def ocr_image_region(
     rotation: float = 0.0,
     class_id: int = 0,
     other_boxes: Optional[List[Dict[str, Any]]] = None,
+    ocr_model_name: str = "manga-ocr-base",
 ) -> str:
     """
     Вырезает область бабла и распознает через MangaOCR.
@@ -298,7 +306,7 @@ def ocr_image_region(
             crop_img, (x1, y1, x2, y2), (img_w, img_h), class_id, other_boxes
         )
         crop_img = ImageOps.expand(crop_img, border=OCR_WHITE_BORDER, fill=(255, 255, 255))
-        return _recognize(crop_img)
+        return _recognize(crop_img, ocr_model_name=ocr_model_name)
 
     # 2. Повернутый кроп
     radius = math.ceil(math.sqrt(bw * bw + bh * bh) / 2.0) + outward_pad + 4
@@ -349,4 +357,4 @@ def ocr_image_region(
         final_crop, (rx1, ry1, rx2, ry2), (rotated_sub.width, rotated_sub.height), class_id, None
     )
     final_crop = ImageOps.expand(final_crop, border=OCR_WHITE_BORDER, fill=(255, 255, 255))
-    return _recognize(final_crop)
+    return _recognize(final_crop, ocr_model_name=ocr_model_name)

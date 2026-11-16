@@ -55,9 +55,11 @@ logs/
 repomix/
 Ultralytics/
 .kilo/
-Документация/
 pack_skeleton.bat
-Архитектура.md
+
+# Локальная документация для ИИ-агента
+AGENTS.md
+docs/
 
 # временный кэш-файл компилятора TypeScript
 *.tsbuildinfo

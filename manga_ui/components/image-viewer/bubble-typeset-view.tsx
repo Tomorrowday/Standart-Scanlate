@@ -25,7 +25,6 @@ export interface BubbleTypesetViewProps {
   onMouseDown: (e: React.MouseEvent, action: EditAction) => void
   onDoubleClick: (e: React.MouseEvent) => void
   handles: React.ReactNode
-  japTooltip: React.ReactNode
 }
 
 export function BubbleTypesetView({
@@ -46,7 +45,6 @@ export function BubbleTypesetView({
   onMouseDown,
   onDoubleClick,
   handles,
-  japTooltip,
 }: BubbleTypesetViewProps) {
   return (
     <div
@@ -114,7 +112,6 @@ export function BubbleTypesetView({
       </div>
 
       {handles}
-      {japTooltip}
     </div>
   )
 }

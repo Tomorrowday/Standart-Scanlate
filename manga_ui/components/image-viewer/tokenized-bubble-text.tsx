@@ -128,6 +128,9 @@ function InteractiveTokenSpan({
   })
 
   const hover = useHover(context, {
+    // Пока открыта форма добавления в глоссарий, уход курсора не должен
+    // закрывать попап и сбрасывать введённый перевод термина.
+    enabled: !isAddingGlossary,
     move: false,
     // Быстрое закрытие: при переходе на соседнее слово старый тултип успевает уйти
     delay: { open: 70, close: 75 },

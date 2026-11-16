@@ -17,10 +17,15 @@ export function useBrushTool({
   const [isBrushPainting, setIsBrushPainting] = useState<boolean>(false)
   const [isBrushProcessing, setIsBrushProcessing] = useState<boolean>(false)
 
+  // Пока идёт мазок, ResizeObserver/resize не должны перезаписывать размер
+  // холста: это мгновенно стирает рисуемый мазок.
+  const isBrushPaintingRef = useRef(false)
+
   const syncBrushCanvasSize = useCallback(() => {
     const canvas = brushCanvasRef.current
     const img = imgRef.current
     if (!canvas || !img) return
+    if (isBrushPaintingRef.current) return
     if (img.clientWidth > 0 && img.clientHeight > 0) {
       if (canvas.width !== img.clientWidth || canvas.height !== img.clientHeight) {
         canvas.width = img.clientWidth
@@ -73,6 +78,7 @@ export function useBrushTool({
       const ctx = canvas.getContext("2d")
       if (!ctx) return
 
+      isBrushPaintingRef.current = true
       setIsBrushPainting(true)
       const { x, y } = getCanvasCoords(e)
 
@@ -126,7 +132,10 @@ export function useBrushTool({
 
     const screenCanvas = brushCanvasRef.current
     const img = imgRef.current
-    if (!screenCanvas || !img || !onBrushClean) return
+    if (!screenCanvas || !img || !onBrushClean) {
+      isBrushPaintingRef.current = false
+      return
+    }
 
     setIsBrushProcessing(true)
 
@@ -173,6 +182,7 @@ export function useBrushTool({
     } catch (err) {
       console.error("Ошибка применения кисти:", err)
     } finally {
+      isBrushPaintingRef.current = false
       setIsBrushProcessing(false)
     }
   }, [isBrushPainting, imgRef, onBrushClean, brushMode])

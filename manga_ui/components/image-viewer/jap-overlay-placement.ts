@@ -87,11 +87,17 @@ export function estimateJapPlateSize(
   japText: string,
   image?: JapPlateImageMetrics | null
 ): { width: number; height: number } {
-  const compact = (japText || "").replace(/\s+/g, "")
-  const lines = Math.min(
-    MAX_ESTIMATED_LINES,
-    Math.max(1, Math.ceil(compact.length / CHARS_PER_LINE))
-  )
+  const text = japText || ""
+  const compact = text.replace(/\s+/g, "")
+
+  // Явные переносы строк (\n) — это отдельные строки плашки даже при коротком
+  // тексте: их нельзя склеивать в одну, иначе плашки наложатся друг на друга.
+  const explicitLineCount = text.split(/\r?\n/).reduce((sum, line) => {
+    const compactLine = line.replace(/\s+/g, "")
+    if (!compactLine) return sum
+    return sum + Math.max(1, Math.ceil(compactLine.length / CHARS_PER_LINE))
+  }, 0)
+  const lines = Math.min(MAX_ESTIMATED_LINES, Math.max(1, explicitLineCount))
 
   if (image && image.width > 0 && image.height > 0) {
     const widthPx = compact.length <= 8 ? PLATE_WIDTH_PX * 0.75 : PLATE_WIDTH_PX

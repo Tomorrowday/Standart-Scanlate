@@ -12,6 +12,41 @@ from services.prompts import (
     build_chapter_batch_prompt,
 )
 
+CLASS_TYPE_LABELS = {
+    0: "bubble",
+    1: "thought",
+    2: "text",
+    3: "sfx",
+}
+
+
+def _parse_numbered_blocks(raw_text: str) -> Dict[int, str]:
+    """
+    Разбирает нумерованный ответ LLM вида `[N] текст`.
+    Строки без маркера присоединяются к предыдущему блоку через `\\n`,
+    чтобы не терять многострочные переводы одной реплики.
+    """
+    blocks: Dict[int, List[str]] = {}
+    order: List[int] = []
+    current_idx: Optional[int] = None
+
+    for raw_line in raw_text.split("\n"):
+        line = raw_line.strip()
+        if not line or line.startswith("```"):
+            continue
+
+        match = re.match(r"^\[(\d+)\]\s*(.*)$", line)
+        if match:
+            current_idx = int(match.group(1)) - 1
+            if current_idx not in blocks:
+                blocks[current_idx] = []
+                order.append(current_idx)
+            blocks[current_idx].append(match.group(2))
+        elif current_idx is not None:
+            blocks[current_idx].append(line)
+
+    return {idx: "\n".join(blocks[idx]) for idx in order}
+
 
 def _strip_wrapping_quotes(text: str) -> str:
     """
@@ -60,10 +95,7 @@ def sanitize_translation(text: str) -> str:
     # 1. Срезаем префиксы вида [Имя в любых символах]: или [Имя]:
     clean = re.sub(r"^\[[^\]]+\]\s*:?\s*", "", clean)
 
-    # 2. Срезаем префиксы вида "Имя:" без скобок в начале строки (до 20 символов)
-    clean = re.sub(r"^[A-Za-zА-Яа-яЁёぁ-んァ-ヶ一-龥]{2,20}\s*:\s*", "", clean)
-
-    # 3. Безопасно убираем обрамляющие кавычки, если LLM обернула всю фразу целиком
+    # 2. Безопасно убираем обрамляющие кавычки, если LLM обернула всю фразу целиком
     clean = _strip_wrapping_quotes(clean)
 
     return clean.strip()
@@ -95,8 +127,9 @@ def translate_batch_items(
 
     lines = []
     for i, item in enumerate(items):
+        b_type = CLASS_TYPE_LABELS.get(int(item.class_id or 0), "bubble")
         speaker_prefix = f"[{item.speaker}]: " if item.speaker and item.speaker.strip() else ""
-        lines.append(f"[{i + 1}] {speaker_prefix}{item.text}")
+        lines.append(f"[{i + 1}] ({b_type}) {speaker_prefix}{item.text}")
 
     dialogue_text = "\n".join(lines)
     prompt = build_page_batch_prompt(dialogue_text, title_description, glossary_rows)
@@ -107,15 +140,10 @@ def translate_batch_items(
     logger.info(f"=== [Gemini Page Batch] Ответ нейросети:\n{raw_text}")
 
     result_map = {}
-    for line in raw_text.split("\n"):
-        line = line.strip()
-        match = re.match(r"^\[(\d+)\]\s*(.*)$", line)
-        if match:
-            idx_str, translated = match.groups()
-            idx = int(idx_str) - 1
-            if 0 <= idx < len(items):
-                item_id = items[idx].id
-                result_map[item_id] = sanitize_translation(translated)
+    for idx, translated in _parse_numbered_blocks(raw_text).items():
+        if 0 <= idx < len(items):
+            item_id = items[idx].id
+            result_map[item_id] = sanitize_translation(translated)
 
     return result_map
 
@@ -133,8 +161,9 @@ def translate_chapter_dialogues(
 
     lines = []
     for i, item in enumerate(chapter_dialogue):
+        b_type = CLASS_TYPE_LABELS.get(int(item.get("class_id") or 0), "bubble")
         spk = f"[{item['speaker']}]: " if item.get("speaker") else ""
-        lines.append(f"[{i + 1}] (Стр. {item['page']}) {spk}{item['text']}")
+        lines.append(f"[{i + 1}] ({b_type}) (Стр. {item['page']}) {spk}{item['text']}")
 
     full_text = "\n".join(lines)
     prompt = build_chapter_batch_prompt(full_text, title_description, glossary_rows)
@@ -146,16 +175,11 @@ def translate_chapter_dialogues(
     raw_text = response.text.strip()
     logger.info(f"========== [Gemini Chapter Batch] ОТВЕТ ==========\n{raw_text}")
 
-    raw_lines = [line.strip() for line in raw_text.split("\n") if line.strip() and not line.strip().startswith("```")]
     result_map = {}
-    for line in raw_lines:
-        match = re.match(r"^\[(\d+)\]\s*(.*)$", line)
-        if match:
-            idx_str, trans = match.groups()
-            idx = int(idx_str) - 1
-            if 0 <= idx < len(chapter_dialogue):
-                block_id = chapter_dialogue[idx]["id"]
-                result_map[block_id] = sanitize_translation(trans)
+    for idx, trans in _parse_numbered_blocks(raw_text).items():
+        if 0 <= idx < len(chapter_dialogue):
+            block_id = chapter_dialogue[idx]["id"]
+            result_map[block_id] = sanitize_translation(trans)
 
     logger.info(f"Успешно сопоставлено: {len(result_map)} из {len(chapter_dialogue)}")
     return result_map

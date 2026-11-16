@@ -47,7 +47,7 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
   const { isTimerRunning, timerSeconds, handleStartTimer, handleStopTimer } = useChapterTimer(currentChapterId)
   const { panelWidth, isResizing, startResizing } = usePanelResize()
   const settings = useMangaSettings()
-  const pageState = useMangaPageState({ setCurrentPage, setViewMode, setCleanCacheBuster })
+  const pageState = useMangaPageState({ setCurrentPage, setChapterPages, setViewMode, setCleanCacheBuster })
 
   // Глобальные настройки с базовым кеглем текущего тайтла
   const globalSettings = { ...settings.globalSettings, default_font_size: settings.titleFontSize }
@@ -78,6 +78,7 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
     currentPage,
     chapterPages,
     setCurrentPage,
+    setChapterPages,
     setCurrentTitleId: settings.setCurrentTitleId,
     setTitleFontSize: settings.setTitleFontSize,
     setIsDetecting: pipelines.setIsDetecting,
@@ -101,6 +102,7 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
     globalSettings,
     selectedId: blocks.selectedId,
     textBlocksRef: blocks.textBlocksRef,
+    saveBlocks: blocks.saveBlocks,
     updateBlock: blocks.updateBlock,
     setTextBlocks: blocks.setTextBlocks,
     setViewMode,
@@ -214,8 +216,7 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
           currentPageId={currentPage?.id || null}
           activePageUpdate={pageState.activePageUpdate}
           refreshTrigger={sidebarRefreshTrigger}
-          onSelectPage={(page) => navigation.handleSelectPage(page, false)}
-          onActiveChapterChange={setChapterPages}
+          onSelectPage={(page, pages) => navigation.handleSelectPage(page, false, pages)}
           onChapterDeleted={handleChapterDeleted}
           onTitleSelected={settings.handleTitleSelected}
         />
@@ -231,6 +232,7 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
           hasCleanScan={Boolean(currentPage?.clean_path)}
           viewMode={viewMode}
           defaultFontSize={settings.titleFontSize}
+          autoOvalBubble={settings.globalSettings.auto_oval_bubble ?? true}
           brushSize={brushSize}
           onBrushResize={actions.handleBrushResize}
           onToggleViewMode={actions.handleToggleViewMode}

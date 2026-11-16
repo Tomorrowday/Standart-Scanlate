@@ -87,15 +87,24 @@ def clean_white_bubble_patch(roi: np.ndarray, gray: np.ndarray):
         )
         is_large = (cw >= w_roi * 0.70 and ch >= h_roi * 0.70)
 
-        if touches_edge or is_large:
+        if is_large:
             cv2.drawContours(border_mask, [cnt], -1, 255, thickness=cv2.FILLED)
             continue
 
-        cnt_mask = np.zeros_like(gray)
-        cv2.fillPoly(cnt_mask, [cnt], 255)
+        # Локальный срез bbox контура вместо полноразмерной маски на каждой итерации
+        sub_interior = interior_mask[cy:cy + ch, cx:cx + cw]
+        cnt_mask = np.zeros((ch, cw), dtype=np.uint8)
+        cv2.fillPoly(cnt_mask, [cnt - [cx, cy]], 255)
+        inside_ratio = np.sum((cnt_mask == 255) & (sub_interior == 255)) / float(max(1, np.sum(cnt_mask == 255)))
 
-        inside_ratio = np.sum((cnt_mask == 255) & (interior_mask == 255)) / float(max(1, np.sum(cnt_mask == 255)))
-        if inside_ratio < 0.75:
+        # Контур у края считается стенкой бабла только если он протяжённый
+        # или значительная его часть лежит вне белого поля (т.е. это рамка, а не буква).
+        if touches_edge:
+            is_long = (cw >= w_roi * 0.30 or ch >= h_roi * 0.30)
+            if is_long or inside_ratio < 0.75:
+                cv2.drawContours(border_mask, [cnt], -1, 255, thickness=cv2.FILLED)
+                continue
+        elif inside_ratio < 0.75:
             cv2.drawContours(border_mask, [cnt], -1, 255, thickness=cv2.FILLED)
             continue
 

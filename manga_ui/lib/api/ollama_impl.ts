@@ -12,6 +12,36 @@ const CLASS_ID_TO_LABEL: Record<number, string> = {
 
 const EMBEDDING_KEYWORDS = ["embed", "nomic-embed", "bge-", "mxbai-embed", "minilm", "snowflake-arctic-embed"]
 
+/**
+ * Снимает внешние кавычки только если они обрамляют всю реплику целиком,
+ * а не принадлежат двум разным цитатам в начале и в конце.
+ */
+function stripWrappingQuotes(text: string): string {
+  if (text.length < 2) return text
+
+  if (text.startsWith("«") && text.endsWith("»")) {
+    let depth = 0
+    let closedBeforeEnd = false
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === "«") depth++
+      else if (text[i] === "»") {
+        depth--
+        if (depth === 0 && i < text.length - 1) {
+          closedBeforeEnd = true
+          break
+        }
+      }
+    }
+    if (!closedBeforeEnd && depth === 0) return text.slice(1, -1).trim()
+  }
+
+  if (text.startsWith('"') && text.endsWith('"')) {
+    if (text.slice(1, -1).indexOf('"') === -1) return text.slice(1, -1).trim()
+  }
+
+  return text
+}
+
 export function pickBestOllamaModel(models: string[]): string {
   if (!models || models.length === 0) return "qwen2.5:7b"
   const chatModels = models.filter(
@@ -118,17 +148,35 @@ ${lines.join("\n")}`
   const rawText: string = data.response || ""
 
   const result: Record<string, string> = {}
-  for (const line of rawText.split("\n")) {
-    const match = line.trim().match(/^\[(\d+)\]\s*(.*)$/)
+  const blocks: Record<number, string[]> = {}
+  const order: number[] = []
+  let currentIdx = -1
+
+  for (const rawLine of rawText.split("\n")) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith("```")) continue
+
+    const match = line.match(/^\[(\d+)\]\s*(.*)$/)
     if (match) {
-      const idx = parseInt(match[1], 10) - 1
-      if (idx >= 0 && idx < items.length) {
-        let clean = match[2].trim()
-        clean = clean.replace(/^\((?:bubble|thought|text|sfx)\)\s*:?\s*/i, "")
-        clean = clean.replace(/^\[[^\]]+\]\s*:?\s*/, "")
-        clean = clean.replace(/^[A-Za-zА-Яа-яЁёぁ-んァ-ヶ一-龥]{2,20}\s*:\s*/, "")
-        result[items[idx].id] = clean
+      currentIdx = parseInt(match[1], 10) - 1
+      if (!(currentIdx in blocks)) {
+        blocks[currentIdx] = []
+        order.push(currentIdx)
       }
+      blocks[currentIdx].push(match[2])
+    } else if (currentIdx >= 0) {
+      // Продолжение многострочного перевода предыдущей реплики
+      blocks[currentIdx].push(line)
+    }
+  }
+
+  for (const idx of order) {
+    if (idx >= 0 && idx < items.length) {
+      let clean = blocks[idx].join("\n").trim()
+      clean = clean.replace(/^\((?:bubble|thought|text|sfx)\)\s*:?\s*/i, "")
+      clean = clean.replace(/^\[[^\]]+\]\s*:?\s*/, "")
+      clean = stripWrappingQuotes(clean)
+      result[items[idx].id] = clean
     }
   }
 

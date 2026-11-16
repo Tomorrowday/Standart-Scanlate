@@ -24,6 +24,8 @@ export interface ImageViewerProps {
   hasCleanScan?: boolean
   viewMode: "original" | "clean"
   defaultFontSize?: number
+  /** Автоматически превращать пустой бабл речи в овал после ввода перевода. */
+  autoOvalBubble?: boolean
   brushSize: number
   onBrushResize: (delta: number) => void
   onToggleViewMode: () => void

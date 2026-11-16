@@ -29,6 +29,8 @@ export interface BubbleInlineEditorProps {
   finalScreenLineHeight: number
   masterBoxPixelH: number
   screenScale: number
+  /** Автоматически превращать пустой бабл речи в овал после ввода перевода. */
+  autoOvalBubble?: boolean
   computeReflowedState: (
     snapshotLines: string[],
     rawInput: string,
@@ -52,6 +54,7 @@ export function BubbleInlineEditor({
   finalScreenLineHeight,
   masterBoxPixelH,
   screenScale,
+  autoOvalBubble = true,
   computeReflowedState,
   onUpdate,
   onClose,
@@ -72,6 +75,9 @@ export function BubbleInlineEditor({
   const wasManualBeforeEditRef = useRef(hasManualLineBreaks(box.rusText))
   const hadForcedSingleLineRef = useRef(Boolean(box.rusText?.includes(FORCED_SINGLE_LINE_MARKER)))
   const userTouchedBreaksRef = useRef(false)
+  // Был ли русский текст пустым при открытии редактора: только в этом случае
+  // авто-режим превращает бабл речи в овал после ввода перевода.
+  const wasEmptyBeforeEditRef = useRef(!box.rusText?.trim())
   editableLinesRef.current = editableLines
 
   useEffect(() => {
@@ -102,6 +108,14 @@ export function BubbleInlineEditor({
     hadForcedSingleLine: hadForcedSingleLineRef.current,
   })
 
+  // Пустой бабл речи при вводе первого перевода становится овалом (если включена настройка).
+  const shouldAutoOval = (storageText: string) =>
+    (box.class_id ?? 0) === 0 &&
+    autoOvalBubble &&
+    wasEmptyBeforeEditRef.current &&
+    box.shape === "rect" &&
+    storageText.trim().length > 0
+
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const nextText = e.target.value
     setLocalText(nextText)
@@ -124,6 +138,10 @@ export function BubbleInlineEditor({
       rusText: storageText,
       status: hasText ? "translated" : box.japText ? "ocr-done" : "new",
     }
+    if (shouldAutoOval(storageText)) {
+      patch.shape = "ellipse"
+      wasEmptyBeforeEditRef.current = false
+    }
     onUpdate(box.id, patch)
   }
 
@@ -144,8 +162,7 @@ export function BubbleInlineEditor({
     )
 
     if (onUpdate) {
-      const isSpeech = (box.class_id ?? 0) === 0
-      const needsShape = isSpeech && !box.shape
+      const needsShape = shouldAutoOval(storageText)
       if (storageText === lastEmittedStorageRef.current && !needsShape) {
         return
       }
@@ -155,7 +172,8 @@ export function BubbleInlineEditor({
         status: hasText ? "translated" : box.japText ? "ocr-done" : "new",
       }
       if (needsShape) {
-        patch.shape = hasText ? "ellipse" : "rect"
+        patch.shape = "ellipse"
+        wasEmptyBeforeEditRef.current = false
       }
       onUpdate(box.id, patch)
     }

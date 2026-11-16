@@ -170,12 +170,25 @@ export function useBatchChapterActions({
 
     await runBatch("export", async (page) => {
       const fresh = (await getPageDetails(page.id)) || page
-      const baseImgUrl = fresh.clean_path
-        ? `${getPageCleanImageUrl(page.id)}?t=${Date.now()}`
-        : getPageImageUrl(page.id)
 
       const dbBlocks = await getPageBlocks(page.id)
       const blocks: TextBlock[] = dbBlocks.map((b: any) => mapDbBlockToTextBlock(b))
+
+      // Как и одиночный Export Page: если клина ещё нет, но есть текст, сначала
+      // очищаем скан, иначе перевод запечётся поверх японского текста.
+      let cleanPath = fresh.clean_path
+      if (!cleanPath && blocks.length > 0) {
+        const cleanRes = await runCleanPage(page.id, "auto")
+        if (!cleanRes || cleanRes.success === false) {
+          throw new Error(cleanRes?.error || "Ошибка клина")
+        }
+        cleanPath = cleanRes.clean_path
+        onPageStatusUpdate?.(page.id, cleanRes.page_status || "cleaned", cleanRes.clean_path)
+      }
+
+      const baseImgUrl = cleanPath
+        ? `${getPageCleanImageUrl(page.id)}?t=${Date.now()}`
+        : getPageImageUrl(page.id)
 
       const baseImg = await loadImage(baseImgUrl)
       const blob = await bakePageBlob(baseImg, blocks, titleDefaultFontSize)

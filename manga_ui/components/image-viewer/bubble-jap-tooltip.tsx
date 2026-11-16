@@ -30,7 +30,6 @@ export interface BubbleJapTooltipProps {
   currentY: number
   currentW: number
   currentH: number
-  currentRot: number
   /** Свободная позиция плашки, посчитанная централизованно (нормализованные координаты страницы). */
   autoJapPlacement?: JapPlatePlacement | null
   onSelect: (id: string) => void
@@ -49,7 +48,6 @@ export function BubbleJapTooltip({
   currentY,
   currentW,
   currentH,
-  currentRot,
   autoJapPlacement = null,
   onSelect,
   onUpdate,
@@ -232,21 +230,19 @@ export function BubbleJapTooltip({
   const hasJapText = Boolean(box.japText && box.japText.trim())
   if (!showJapOverlay || isDraft || isInlineEditing || (!hasJapText && !isEditingJap)) return null
 
-  // Базовая позиция: свободное место, посчитанное централизованно в image-viewer_impl.
-  // Если его нет (например, плашка для бабла без japText) — старый резервный автоподбор по краям страницы.
+  // Позиция плашки задаётся в нормализованных координатах страницы (не внутри
+  // повёрнутого контейнера бабла). Поэтому при вращении бабла плашка не уезжает
+  // по дуге, а текст всегда остаётся ровным и чётким.
   const hasAutoPlacement =
     Boolean(autoJapPlacement) && currentW > 0.0001 && currentH > 0.0001
 
-  let positionClasses = ""
   let baseTranslate = ""
-  let autoPositionStyle: React.CSSProperties | undefined
+  let autoPositionStyle: React.CSSProperties
 
   if (hasAutoPlacement && autoJapPlacement) {
-    // Переводим нормализованную позицию страницы в проценты относительно самого бабла,
-    // потому что плашка рендерится внутри его абсолютного контейнера.
     autoPositionStyle = {
-      left: `${((autoJapPlacement.x - currentX) / currentW) * 100}%`,
-      top: `${((autoJapPlacement.y - currentY) / currentH) * 100}%`,
+      left: `${autoJapPlacement.x * 100}%`,
+      top: `${autoJapPlacement.y * 100}%`,
     }
   } else {
     // Резервный автоподбор базовой стороны вокруг бабла по свободному месту до краёв страницы
@@ -255,23 +251,38 @@ export function BubbleJapTooltip({
     const spaceBottom = 1 - (currentY + currentH)
 
     if (spaceRight >= 0.22) {
-      positionClasses = "left-full ml-2 top-0"
+      autoPositionStyle = {
+        left: `${(currentX + currentW) * 100}%`,
+        top: `${currentY * 100}%`,
+      }
     } else if (spaceLeft >= 0.22) {
-      positionClasses = "right-full mr-2 top-0"
+      autoPositionStyle = {
+        right: `${(1 - currentX) * 100}%`,
+        top: `${currentY * 100}%`,
+      }
     } else if (spaceBottom >= 0.14) {
-      positionClasses = "top-full mt-2 left-1/2"
+      autoPositionStyle = {
+        left: `${(currentX + currentW / 2) * 100}%`,
+        top: `${(currentY + currentH) * 100}%`,
+      }
       baseTranslate = "translateX(-50%)"
     } else {
-      positionClasses = "bottom-full mb-2 left-1/2"
+      autoPositionStyle = {
+        left: `${(currentX + currentW / 2) * 100}%`,
+        bottom: `${(1 - currentY) * 100}%`,
+      }
       baseTranslate = "translateX(-50%)"
     }
   }
 
+  // Только целочисленный сдвиг пользователя — никакого translate3d и вращения,
+  // иначе Chromium теряет субпиксельное сглаживание японских иероглифов.
   const transformParts: string[] = []
   if (baseTranslate) transformParts.push(baseTranslate)
-  if (Math.abs(currentRot) >= 0.5) transformParts.push(`rotate(${-currentRot}deg)`)
-  if (activeOffset.x !== 0 || activeOffset.y !== 0) {
-    transformParts.push(`translate3d(${activeOffset.x}px, ${activeOffset.y}px, 0)`)
+  const offsetX = Math.round(activeOffset.x)
+  const offsetY = Math.round(activeOffset.y)
+  if (offsetX !== 0 || offsetY !== 0) {
+    transformParts.push(`translate(${offsetX}px, ${offsetY}px)`)
   }
   const combinedTransform = transformParts.length > 0 ? transformParts.join(" ") : undefined
 
@@ -299,7 +310,6 @@ export function BubbleJapTooltip({
         isSelected
           ? "border-2 border-amber-400/90 ring-2 ring-amber-400/25"
           : "border border-indigo-500/60 hover:border-indigo-400",
-        positionClasses,
       ].join(" ")}
       style={{
         ...autoPositionStyle,

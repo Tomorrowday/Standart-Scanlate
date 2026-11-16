@@ -47,9 +47,21 @@ export function useBoxTransform(
     let localDy = dy
 
     if (Math.abs(currentRot) >= 0.5) {
-      const rad = (-currentRot * Math.PI) / 180
-      localDx = dx * Math.cos(rad) - dy * Math.sin(rad)
-      localDy = dx * Math.sin(rad) + dy * Math.cos(rad)
+      // Нормализованные доли искажают оси при повороте, если изображение не
+      // квадратное: переводим сдвиг в пиксели, поворачиваем и возвращаем обратно.
+      const img = imgRef.current
+      if (img) {
+        const rect = img.getBoundingClientRect()
+        if (rect.width > 0 && rect.height > 0) {
+          const pxDx = dx * rect.width
+          const pxDy = dy * rect.height
+          const rad = (-currentRot * Math.PI) / 180
+          const rotPxX = pxDx * Math.cos(rad) - pxDy * Math.sin(rad)
+          const rotPxY = pxDx * Math.sin(rad) + pxDy * Math.cos(rad)
+          localDx = rotPxX / rect.width
+          localDy = rotPxY / rect.height
+        }
+      }
     }
 
     if (action === "e" || action === "ne" || action === "se") {
@@ -71,7 +83,7 @@ export function useBoxTransform(
     }
 
     return updated
-  }, [])
+  }, [imgRef])
 
   const startTransform = useCallback(
     (e: React.MouseEvent, box: TextBlock, action: EditAction) => {
@@ -106,28 +118,38 @@ export function useBoxTransform(
   useEffect(() => {
     if (!isEditing) return
 
+    // Угол считаем по «сырым» координатам курсора без клампинга в [0, 1]:
+    // при вращении у края страницы курсор выходит за изображение, и клампинг
+    // приводил бы к резким скачкам угла.
+    const getRotationDeg = (e: MouseEvent, session: TransformSession) => {
+      const img = imgRef.current
+      if (!img) return session.currentRotation
+      const imgRect = img.getBoundingClientRect()
+      const cx = session.originalBox.x + session.originalBox.width / 2
+      const cy = session.originalBox.y + session.originalBox.height / 2
+      const px = e.clientX - imgRect.left - cx * imgRect.width
+      const py = e.clientY - imgRect.top - cy * imgRect.height
+
+      let deg = (Math.atan2(py, px) * 180) / Math.PI + 90
+      deg = ((deg + 180) % 360) - 180
+
+      if (Math.abs(deg) < 2.0) deg = 0
+      return deg
+    }
+
     const handleGlobalMouseMove = (e: MouseEvent) => {
       const session = sessionRef.current
       if (!session || !imgRef.current) return
-      const p = pointFromEventRef.current(e)
-      if (!p) return
 
       if (session.editType === "rotate") {
-        const cx = session.originalBox.x + session.originalBox.width / 2
-        const cy = session.originalBox.y + session.originalBox.height / 2
-        const imgRect = imgRef.current.getBoundingClientRect()
-        const px = (p.x - cx) * imgRect.width
-        const py = (p.y - cy) * imgRect.height
-
-        let deg = (Math.atan2(py, px) * 180) / Math.PI + 90
-        deg = ((deg + 180) % 360) - 180
-
-        if (Math.abs(deg) < 2.0) deg = 0
-
+        const deg = getRotationDeg(e, session)
         session.currentRotation = deg
         setActiveRotation(deg)
         return
       }
+
+      const p = pointFromEventRef.current(e)
+      if (!p) return
 
       const dx = p.x - session.startPoint.x
       const dy = p.y - session.startPoint.y
@@ -139,16 +161,30 @@ export function useBoxTransform(
       const session = sessionRef.current
       if (!session || !imgRef.current) return
 
-      const p = pointFromEventRef.current(e)
-      if (p) {
-        if (session.editType === "rotate") {
-          const finalRot = Math.round(session.currentRotation * 10) / 10
+      if (session.editType === "rotate") {
+        const finalRot = Math.round(getRotationDeg(e, session) * 10) / 10
+        const origRot = session.originalBox.rotation || 0
+        // Клик без реального вращения не должен создавать пустой шаг Undo.
+        if (Math.abs(finalRot - origRot) > 0.05) {
           onTransformCompleteRef.current(session.originalBox, imgRef.current, session.editId, finalRot)
-        } else {
+        }
+      } else {
+        const p = pointFromEventRef.current(e)
+        if (p) {
           const dx = p.x - session.startPoint.x
           const dy = p.y - session.startPoint.y
           const finalRect = computeUpdatedRect(session.originalBox, session.editType, dx, dy)
-          onTransformCompleteRef.current(finalRect, imgRef.current, session.editId, session.originalBox.rotation || 0)
+          const orig = session.originalBox
+          const changed =
+            Math.abs(finalRect.x - orig.x) > 1e-4 ||
+            Math.abs(finalRect.y - orig.y) > 1e-4 ||
+            Math.abs(finalRect.width - orig.width) > 1e-4 ||
+            Math.abs(finalRect.height - orig.height) > 1e-4
+          // Простой клик/двойной клик по баблу без сдвига не должен
+          // записывать холостой снапшот в историю Undo.
+          if (changed) {
+            onTransformCompleteRef.current(finalRect, imgRef.current, session.editId, orig.rotation || 0)
+          }
         }
       }
 

@@ -138,26 +138,38 @@ def _mask_foreign_neighbor_regions_in_page_coords(
         if norm_dy >= norm_dx:
             # Баблы расположены преимущественно друг над другом: делим по горизонтали (Y)
             if dy > 0:
-                # Сосед B ниже бабла A
-                safe_y = (y1 + ta_ly1 - (y1 - sy1) + core_a[3] + 2) if core_a is not None else mid_ov_y
-                cut_y = max(mid_ov_y, min(float(y2), float(safe_y)))
+                # Сосед B ниже бабла A: режем сразу за собственным ядром A, не зажимая к mid_ov_y
+                if core_a is not None:
+                    safe_y = y1 + core_a[3] + 2
+                    cut_y = max(float(iy1), min(float(iy2), float(safe_y)))
+                else:
+                    cut_y = mid_ov_y
                 foreign_mask = sub_yy > cut_y
             else:
                 # Сосед B выше бабла A
-                safe_y = (y1 + ta_ly1 - (y1 - sy1) + core_a[1] - 2) if core_a is not None else mid_ov_y
-                cut_y = min(mid_ov_y, max(float(y1), float(safe_y)))
+                if core_a is not None:
+                    safe_y = y1 + core_a[1] - 2
+                    cut_y = max(float(iy1), min(float(iy2), float(safe_y)))
+                else:
+                    cut_y = mid_ov_y
                 foreign_mask = sub_yy < cut_y
         else:
             # Баблы расположены преимущественно слева/справа: делим по вертикали (X)
             if dx > 0:
                 # Сосед B правее бабла A
-                safe_x = (x1 + ta_lx1 - (x1 - sx1) + core_a[2] + 2) if core_a is not None else mid_ov_x
-                cut_x = max(mid_ov_x, min(float(x2), float(safe_x)))
+                if core_a is not None:
+                    safe_x = x1 + core_a[2] + 2
+                    cut_x = max(float(ix1), min(float(ix2), float(safe_x)))
+                else:
+                    cut_x = mid_ov_x
                 foreign_mask = sub_xx > cut_x
             else:
                 # Сосед B левее бабла A
-                safe_x = (x1 + ta_lx1 - (x1 - sx1) + core_a[0] - 2) if core_a is not None else mid_ov_x
-                cut_x = min(mid_ov_x, max(float(x1), float(safe_x)))
+                if core_a is not None:
+                    safe_x = x1 + core_a[0] - 2
+                    cut_x = max(float(ix1), min(float(ix2), float(safe_x)))
+                else:
+                    cut_x = mid_ov_x
                 foreign_mask = sub_xx < cut_x
 
         # Дополнительно защищаем собственное текстовое ядро бабла A от любого затирания

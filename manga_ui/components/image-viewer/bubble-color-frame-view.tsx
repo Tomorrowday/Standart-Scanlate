@@ -23,7 +23,6 @@ export interface BubbleColorFrameViewProps {
   onMouseDown: (e: React.MouseEvent, action: EditAction) => void
   onDoubleClick: (e: React.MouseEvent) => void
   handles: React.ReactNode
-  japTooltip: React.ReactNode
 }
 
 export function BubbleColorFrameView({
@@ -41,7 +40,6 @@ export function BubbleColorFrameView({
   onMouseDown,
   onDoubleClick,
   handles,
-  japTooltip,
 }: BubbleColorFrameViewProps) {
   const classId = ((box.class_id ?? 0) in CLASS_THEMES ? box.class_id ?? 0 : 0) as BubbleClassId
   const theme = CLASS_THEMES[classId]
@@ -118,7 +116,6 @@ export function BubbleColorFrameView({
             <span className="opacity-90 font-mono text-[9px]">[{theme.label}]</span>
           </span>
           {handles}
-          {japTooltip}
         </>
       )}
     </div>

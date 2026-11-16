@@ -33,6 +33,7 @@ export function ImageViewer({
   hasCleanScan = false,
   viewMode,
   defaultFontSize = 14,
+  autoOvalBubble = true,
   brushSize,
   onBrushResize,
   onToggleViewMode,
@@ -276,6 +277,7 @@ export function ImageViewer({
                   activeBox={activeBox}
                   activeRotation={activeRotation}
                   defaultFontSize={defaultFontSize}
+                  autoOvalBubble={autoOvalBubble}
                   onStartTransform={startTransform}
                   onSelect={onSelect}
                   onUpdate={onUpdateBlock}

@@ -295,7 +295,9 @@ def get_dictionary_status(db_path: Path = JP_DICT_DB_PATH) -> Dict[str, Any]:
         "db_path": str(db_path),
         "total_entries": total,
         "sources": counts,
-        "is_full_dictionary_loaded": total > 5000,
+        "is_full_dictionary_loaded": (
+            counts.get("jmdict_ru", 0) > 5000 and counts.get("warodai", 0) > 5000
+        ),
         "local_zip_files": local_zips,
         "build_progress": dict(_build_progress),
     }
@@ -353,10 +355,21 @@ def download_and_build_dictionaries(
 
         ensure_jp_dict_schema(JP_DICT_DB_PATH)
 
+        existing_counts = get_dictionary_status(JP_DICT_DB_PATH).get("sources", {})
+
         for src_key in target_sources:
             url = DICT_DOWNLOAD_URLS.get(src_key)
             if not url:
                 logger.warning(f"[Dictionary] Неизвестный источник словаря: {src_key}")
+                continue
+
+            # Докачиваем только недостающий словарь: уже загруженный источник пропускаем
+            if not force_download and existing_counts.get(src_key, 0) > 5000:
+                logger.info(
+                    f"[Dictionary] Источник '{src_key}' уже загружен "
+                    f"({existing_counts[src_key]} статей), пропуск."
+                )
+                imported_stats[src_key] = int(existing_counts[src_key])
                 continue
 
             zip_filename = "JMdict_russian.zip" if src_key == "jmdict_ru" else f"{src_key}-yomitan.zip"

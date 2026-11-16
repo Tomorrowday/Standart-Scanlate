@@ -29,6 +29,8 @@ export interface BubbleOverlayItemProps {
   activeBox: DrawRect | null
   activeRotation: number
   defaultFontSize?: number
+  /** Автоматически превращать пустой бабл речи в овал после ввода перевода. */
+  autoOvalBubble?: boolean
   onStartTransform: (e: React.MouseEvent, box: TextBlock, action: EditAction) => void
   onSelect: (id: string) => void
   onUpdate?: (id: string, patch: Partial<TextBlock>) => void

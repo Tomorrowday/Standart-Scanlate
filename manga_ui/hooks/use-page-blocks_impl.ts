@@ -33,6 +33,11 @@ export function usePageBlocks(
 
   const isDirtyRef = useRef(false)
 
+  // Авто-OCR новых баблов выполняется асинхронно и обновляет блок, которого
+  // ещё нет в БД. Держим промисы, чтобы сохранение дождалось распознанного
+  // текста и не записало пустой jap_text.
+  const pendingOcrPromisesRef = useRef<Set<Promise<unknown>>>(new Set())
+
   // Последнее текстовое изменение: пока пользователь печатает без паузы
   // дольше TEXT_UNDO_COALESCE_MS, новые снапшоты Undo не создаются.
   const lastTextUndoRef = useRef<{ blockId: string; time: number } | null>(null)
@@ -60,7 +65,23 @@ export function usePageBlocks(
     async (targetPageId: number, blocksToSave: TextBlock[], refreshSpeakers = true) => {
       setIsSaving(true)
       try {
-        const payload = blocksToSave.map((b) => ({
+        // Дожидаемся незавершённого авто-OCR: иначе новый блок сохранится в БД
+        // с пустым jap_text, а результат распознавания потеряется.
+        if (pendingOcrPromisesRef.current.size > 0) {
+          await Promise.allSettled(Array.from(pendingOcrPromisesRef.current))
+        }
+
+        // Пока ждали OCR, блоки в локальном стейте могли получить japText.
+        // Подмешиваем актуальные значения в отправляемый payload.
+        const latestBlocks = textBlocksRef.current
+        const blocksWithOcr = blocksToSave.map((b) => {
+          if (b.japText && b.japText.trim().length > 0) return b
+          const latest = latestBlocks.find((lb) => lb.id === b.id)
+          if (!latest || !latest.japText || latest.japText.trim().length === 0) return b
+          return { ...b, japText: latest.japText, status: latest.status }
+        })
+
+        const payload = blocksWithOcr.map((b) => ({
           id: b.id,
           class_id: b.class_id ?? 0,
           x: b.x,
@@ -342,7 +363,7 @@ export function usePageBlocks(
       // useEffect в карточке, — иначе гонка с сохранением/сменой страницы.
       const targetPageId = currentPageRef.current?.id
       if (targetPageId) {
-        runOcr(
+        const ocrPromise: Promise<unknown> = runOcr(
           targetPageId,
           newBlock.x,
           newBlock.y,
@@ -379,6 +400,11 @@ export function usePageBlocks(
           .catch((err) => {
             console.warn("Авто-OCR нового бабла не удался:", err)
           })
+          .finally(() => {
+            pendingOcrPromisesRef.current.delete(ocrPromise)
+          })
+
+        pendingOcrPromisesRef.current.add(ocrPromise)
       }
     },
     [globalSettings, pushUndoSnapshot]

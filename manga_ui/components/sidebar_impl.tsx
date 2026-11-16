@@ -47,7 +47,6 @@ export function Sidebar({
   activePageUpdate,
   refreshTrigger,
   onSelectPage,
-  onActiveChapterChange,
   onChapterDeleted,
   onTitleSelected,
 }: SidebarProps) {
@@ -368,8 +367,7 @@ export function Sidebar({
                           <button
                             key={p.id}
                             onClick={() => {
-                              onSelectPage(p)
-                              onActiveChapterChange?.(ch.pages)
+                              onSelectPage(p, ch.pages)
                             }}
                             className={[
                               "flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors",

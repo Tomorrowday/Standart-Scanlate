@@ -12,8 +12,7 @@ export interface SidebarProps {
   currentPageId: number | null
   activePageUpdate?: { id: number; status: PageStatus; clean_path?: string } | null
   refreshTrigger?: number
-  onSelectPage: (page: PageItem) => void
-  onActiveChapterChange?: (pages: PageItem[]) => void
+  onSelectPage: (page: PageItem, chapterPages?: PageItem[]) => void
   onChapterDeleted?: (chapterId: number) => void
   onTitleSelected?: (titleId: number, defaultFontSize?: number) => void
 }

@@ -27,6 +27,7 @@ export const BubbleOverlayItem = memo(function BubbleOverlayItem({
   activeBox,
   activeRotation,
   defaultFontSize = 14,
+  autoOvalBubble = true,
   onStartTransform,
   onSelect,
   onUpdate,
@@ -94,7 +95,6 @@ export const BubbleOverlayItem = memo(function BubbleOverlayItem({
       currentY={currentY}
       currentW={currentW}
       currentH={currentH}
-      currentRot={currentRot}
       onSelect={onSelect}
       onUpdate={onUpdate}
     />
@@ -109,7 +109,6 @@ export const BubbleOverlayItem = memo(function BubbleOverlayItem({
     onMouseDown: handleMouseDown,
     onDoubleClick: handleDoubleClick,
     handles: handlesNode,
-    japTooltip: japTooltipNode,
   }
 
   if (isInlineEditing) {
@@ -128,6 +127,7 @@ export const BubbleOverlayItem = memo(function BubbleOverlayItem({
         finalScreenLineHeight={finalScreenLineHeight}
         masterBoxPixelH={masterBoxPixelH}
         screenScale={screenScale}
+        autoOvalBubble={autoOvalBubble}
         computeReflowedState={computeReflowedState}
         onUpdate={onUpdate}
         onClose={() => setIsInlineEditing(false)}
@@ -137,30 +137,38 @@ export const BubbleOverlayItem = memo(function BubbleOverlayItem({
 
   if (showTypeset && !isDraft && hasTranslation) {
     return (
-      <BubbleTypesetView
-        box={box}
-        screenLines={screenLines}
-        isEllipse={isEllipse}
-        isWhiteText={isWhiteText}
-        isSelected={isSelected}
-        showJapOverlay={showJapOverlay}
-        currentFont={currentFont}
-        finalScreenFontSize={finalScreenFontSize}
-        finalScreenLineHeight={finalScreenLineHeight}
-        {...positionProps}
-      />
+      <>
+        <BubbleTypesetView
+          box={box}
+          screenLines={screenLines}
+          isEllipse={isEllipse}
+          isWhiteText={isWhiteText}
+          isSelected={isSelected}
+          showJapOverlay={showJapOverlay}
+          currentFont={currentFont}
+          finalScreenFontSize={finalScreenFontSize}
+          finalScreenLineHeight={finalScreenLineHeight}
+          {...positionProps}
+        />
+        {/* Плашка JP рендерится рядом, а не внутри повёрнутого контейнера бабла:
+            так её текст не растеризуется вместе с вращением и остаётся чётким. */}
+        {japTooltipNode}
+      </>
     )
   }
 
   return (
-    <BubbleColorFrameView
-      box={box}
-      index={index}
-      isDraft={isDraft}
-      isEllipse={isEllipse}
-      isSelected={isSelected}
-      showJapOverlay={showJapOverlay}
-      {...positionProps}
-    />
+    <>
+      <BubbleColorFrameView
+        box={box}
+        index={index}
+        isDraft={isDraft}
+        isEllipse={isEllipse}
+        isSelected={isSelected}
+        showJapOverlay={showJapOverlay}
+        {...positionProps}
+      />
+      {japTooltipNode}
+    </>
   )
 })

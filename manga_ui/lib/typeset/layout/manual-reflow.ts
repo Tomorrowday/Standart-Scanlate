@@ -143,26 +143,47 @@ function normalizeSoftHyphensInLine(line: string, pairs: SoftHyphenPair[]): stri
 }
 
 /**
- * Убирает «висячий» мягкий дефис в конце строки, если вторая половина слова
- * больше не начинается со следующей строки. Пример: было ["При-", "вет"],
- * пользователь оставил "При-" в конце строки, но следующая строка теперь
- * начинается с другого слова — дефис от старой вёрстки снимается.
+ * Обрабатывает мягкие слоговые переносы на стыке строк.
+ *
+ * - Если строка заканчивается на `pair.left + "-"`, а следующая начинается
+ *   с буквенного продолжения (и это не двусоставное слово), части одного
+ *   слова склеиваются в строке `i` без дефиса и без пробела.
+ *   Это работает и в авто-, и в ручном режиме: мягкий дефис авто-вёрстки
+ *   никогда не должен остаться жёстким символом `-` в `box.rusText`.
+ * - Если продолжения нет, «висячий» дефис от старой вёрстки снимается.
  */
 function normalizeCrossLineSoftHyphens(lines: string[], pairs: SoftHyphenPair[]): string[] {
   const result = [...lines]
+  if (pairs.length === 0) return result
 
-  for (const pair of pairs) {
-    const leftRe = new RegExp(`(^|[\\s(«"\\[…])${escapeRegExp(pair.left)}-$`, "i")
-    const rightRe = new RegExp(`^[\\s(«"\\[…]*${escapeRegExp(pair.right)}`, "i")
+  const stems = Array.from(new Set(pairs.map((pair) => pair.left)))
+  const continuationRe = /^[0-9A-Za-zА-Яа-яЁё]/
 
-    for (let i = 0; i < result.length; i++) {
-      if (!leftRe.test(result[i])) continue
+  for (let i = 0; i < result.length; i++) {
+    const line = result[i]
+    const nextLine = result[i + 1] || ""
 
-      const nextLine = result[i + 1] || ""
-      if (nextLine && rightRe.test(nextLine)) continue
+    const matchedStem = stems.find((stem) => {
+      const leftRe = new RegExp(`(^|[\\s(«"\\[…])${escapeRegExp(stem)}-$`, "i")
+      return leftRe.test(line)
+    })
+    if (!matchedStem) continue
 
-      result[i] = result[i].replace(/-$/, "")
+    // Срезаем возможные открывающие кавычки/скобки, чтобы понять, с чего
+    // начинается продолжение слова в следующей строке.
+    const continuation = nextLine.replace(/^[\s(«"\[…]*/, "")
+    if (!continuationRe.test(continuation)) {
+      result[i] = line.replace(/-$/, "")
+      continue
     }
+
+    const firstWord = continuation.split(/\s+/)[0] || ""
+    if (isCompoundHyphenPair(matchedStem, firstWord)) continue
+
+    // Склеиваем разорванное слово: "Подож-" + "дите" -> "Подождите".
+    result[i] = line.replace(/-$/, "") + continuation
+    result.splice(i + 1, 1)
+    i--
   }
 
   return result

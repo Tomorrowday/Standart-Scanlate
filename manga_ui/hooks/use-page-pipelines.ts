@@ -25,6 +25,7 @@ export interface UsePagePipelinesProps {
 
 export interface UsePagePipelinesReturn {
   isDetecting: boolean
+  setIsDetecting: (value: boolean) => void
   isOcrRunning: boolean
   isBatchTranslating: boolean
   isCleaning: boolean

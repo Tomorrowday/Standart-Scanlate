@@ -71,6 +71,8 @@ export function useBatchChapterActions({
     setJustFinished(null)
     setProgress({ action, done: 0, total: pages.length, label: ACTION_LABELS[action] })
 
+    const failedPages: string[] = []
+
     try {
       for (let i = 0; i < pages.length; i++) {
         const page = pages[i]
@@ -79,11 +81,22 @@ export function useBatchChapterActions({
           await worker(page, i)
         } catch (e) {
           console.error(`Пакетная ошибка (${action}) на странице ${page.id}:`, e)
+          failedPages.push(`стр. ${page.page_number} (${e instanceof Error ? e.message : String(e)})`)
         }
       }
-      setProgress({ action, done: pages.length, total: pages.length, label: "Done" })
-      setJustFinished(action)
-      setTimeout(() => setJustFinished(null), 2500)
+
+      if (failedPages.length < pages.length) {
+        setProgress({ action, done: pages.length, total: pages.length, label: "Done" })
+        setJustFinished(action)
+        setTimeout(() => setJustFinished(null), 2500)
+      }
+
+      if (failedPages.length > 0) {
+        alert(
+          `Операция "${ACTION_LABELS[action]}" завершена с ошибками (${failedPages.length} из ${pages.length}):\n` +
+          failedPages.slice(0, 10).join("\n")
+        )
+      }
     } finally {
       setProgress(null)
       onCompleteBatch?.()
@@ -97,17 +110,19 @@ export function useBatchChapterActions({
         return
       }
       const res = await runPageAutoDetect(page.id)
-      if (res.success && res.boxes && res.boxes.length > 0) {
-        onPageStatusUpdate?.(page.id, "detected")
+      if (!res || res.success === false) {
+        throw new Error(res?.error || "Ошибка детекции")
       }
+      onPageStatusUpdate?.(page.id, "detected")
     })
 
   const cleanChapter = () =>
     runBatch("clean", async (page) => {
       const res = await runCleanPage(page.id)
-      if (res.success) {
-        onPageStatusUpdate?.(page.id, res.page_status || "cleaned", res.clean_path)
+      if (!res || res.success === false) {
+        throw new Error(res?.error || "Ошибка клина")
       }
+      onPageStatusUpdate?.(page.id, res.page_status || "cleaned", res.clean_path)
     })
 
   const translateChapter = async () => {
@@ -153,7 +168,7 @@ export function useBatchChapterActions({
 
     await ensureCurrentPageSaved()
 
-    runBatch("export", async (page) => {
+    await runBatch("export", async (page) => {
       const fresh = (await getPageDetails(page.id)) || page
       const baseImgUrl = fresh.clean_path
         ? `${getPageCleanImageUrl(page.id)}?t=${Date.now()}`
@@ -165,12 +180,14 @@ export function useBatchChapterActions({
       const baseImg = await loadImage(baseImgUrl)
       const blob = await bakePageBlob(baseImg, blocks, titleDefaultFontSize)
 
-      if (blob) {
-        const res = await saveTranslatedPage(page.id, blob)
-        if (res.success) {
-          onPageStatusUpdate?.(page.id, "done")
-        }
+      if (!blob) {
+        throw new Error("Не удалось сформировать PNG")
       }
+      const res = await saveTranslatedPage(page.id, blob)
+      if (!res || res.success === false) {
+        throw new Error(res?.error || "Ошибка сохранения страницы")
+      }
+      onPageStatusUpdate?.(page.id, "done")
     })
   }
 

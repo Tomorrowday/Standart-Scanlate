@@ -10,8 +10,13 @@ import {
   runOcr,
   saveTranslatedPage,
 } from "@/lib/api"
-import { runOllamaBatchTranslate, checkOllamaConnection } from "@/lib/api/ollama"
+import {
+  runOllamaBatchTranslate,
+  checkOllamaConnection,
+  pickBestOllamaModel,
+} from "@/lib/api/ollama"
 import { runConcurrent } from "./concurrent-pool"
+import { loadTitleTranslationContext } from "./translate-pipeline"
 import type { PagePipelineContext } from "./types"
 
 export async function executeExportPage(ctx: PagePipelineContext): Promise<void> {
@@ -87,13 +92,18 @@ export async function executeFullAuto(
     await saveBlocks(true)
 
     let currentBlocks = [...textBlocks]
+    let ranAutoDetectNow = false
     if (currentBlocks.length === 0 && (currentPage.status === "raw" || currentPage.status === "new")) {
+      ranAutoDetectNow = true
       await runAutoDetect()
       currentBlocks = textBlocksRef.current
     }
 
     if (currentBlocks.length === 0) {
-      alert("Баблы на странице отсутствуют.")
+      // Если только что отработал runAutoDetect, он уже показал alert("Баблы с текстом не найдены.")
+      if (!ranAutoDetectNow) {
+        alert("Баблы на странице отсутствуют.")
+      }
       return
     }
 
@@ -126,6 +136,7 @@ export async function executeFullAuto(
       throw new Error("Ошибка при очистке страницы: " + cleanRes.error)
     }
     setViewMode("clean")
+    onPageStatusUpdate(currentPage.id, "cleaned", cleanRes.clean_path)
 
     const check = await checkOllamaConnection("http://localhost:11434")
     if (check.ok) {
@@ -139,9 +150,12 @@ export async function executeFullAuto(
         }))
 
       if (toTranslate.length > 0) {
+        const { synopsis, glossary } = await loadTitleTranslationContext(currentPage.title_id)
         const translations = await runOllamaBatchTranslate(toTranslate, {
           baseUrl: "http://localhost:11434",
-          model: check.models[0] || "qwen2.5:7b",
+          model: pickBestOllamaModel(check.models),
+          synopsis,
+          glossary,
         })
         const autoOval = globalSettings.auto_oval_bubble ?? true
         currentBlocks = currentBlocks.map((b) => {
@@ -169,10 +183,12 @@ export async function executeFullAuto(
     const blob = await bakePageBlob(cleanImg, textBlocksRef.current, globalSettings.default_font_size || 14)
 
     if (blob) {
-      await saveTranslatedPage(currentPage.id, blob)
-      setIsExportSuccess(true)
-      onPageStatusUpdate(currentPage.id, "done", cleanRes.clean_path)
-      setTimeout(() => setIsExportSuccess(false), 2500)
+      const saveRes = await saveTranslatedPage(currentPage.id, blob)
+      if (saveRes.success) {
+        setIsExportSuccess(true)
+        onPageStatusUpdate(currentPage.id, "done", cleanRes.clean_path)
+        setTimeout(() => setIsExportSuccess(false), 2500)
+      }
     }
   } catch (e) {
     console.error(e)

@@ -1,4 +1,5 @@
 import os
+import sys
 import shutil
 import subprocess
 from fastapi import HTTPException, UploadFile
@@ -44,8 +45,15 @@ def open_translated_folder(page_id: int):
 
     translated_dir = os.path.join(os.path.dirname(row["file_path"]), "translated")
     os.makedirs(translated_dir, exist_ok=True)
-    if hasattr(os, "startfile"):
-        os.startfile(translated_dir)
-    else:
-        subprocess.Popen(["explorer", translated_dir])
+
+    try:
+        if hasattr(os, "startfile"):
+            os.startfile(translated_dir)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", translated_dir])
+        else:
+            subprocess.Popen(["xdg-open", translated_dir])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Не удалось открыть папку в проводнике: {e}")
+
     return {"success": True}

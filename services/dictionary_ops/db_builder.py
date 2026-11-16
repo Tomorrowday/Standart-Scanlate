@@ -183,93 +183,93 @@ def import_yomitan_zip(
     with dict_db_connection(db_path) as conn:
         cur = conn.cursor()
         cur.execute("PRAGMA synchronous = OFF;")
+        try:
+            # Удаляем старые записи этого источника в рамках единой транзакции с новыми вставками,
+            # чтобы параллельные читатели в режиме WAL не получали пустые ответы во время импорта
+            cur.execute("DELETE FROM dict_entries WHERE source = ?", (source_label,))
 
-        # Удаляем старые записи этого источника перед переимпортом
-        cur.execute("DELETE FROM dict_entries WHERE source = ?", (source_label,))
-        # Фиксируем удаление сразу, чтобы не держать долгий write-lock во время импорта
-        conn.commit()
-
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            term_files = sorted(
-                f for f in zf.namelist()
-                if ("term_bank_" in f) and f.endswith(".json")
-            )
-            for tf in term_files:
-                try:
-                    rows = json.loads(zf.read(tf).decode("utf-8"))
-                except Exception as e:
-                    logger.warning(f"[Dictionary] Пропущен битый файл '{tf}' в '{zip_path.name}': {e}")
-                    continue
-                if not isinstance(rows, list):
-                    continue
-
-                for row in rows:
-                    if not isinstance(row, list) or len(row) < 6:
-                        continue
-                    expr = str(row[0] or "").strip()
-                    reading = str(row[1] or expr).strip()
-                    def_tags = str(row[2] or "").strip()
-                    rules = str(row[3] or "").strip()
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                term_files = sorted(
+                    f for f in zf.namelist()
+                    if ("term_bank_" in f) and f.endswith(".json")
+                )
+                for tf in term_files:
                     try:
-                        score = int(row[4] or 0)
-                    except (TypeError, ValueError):
-                        score = 0
-                    raw_gloss = row[5] if isinstance(row[5], list) else []
-                    seq = 0
-                    if len(row) > 6 and row[6] is not None:
+                        rows = json.loads(zf.read(tf).decode("utf-8"))
+                    except Exception as e:
+                        logger.warning(f"[Dictionary] Пропущен битый файл '{tf}' в '{zip_path.name}': {e}")
+                        continue
+                    if not isinstance(rows, list):
+                        continue
+
+                    for row in rows:
+                        if not isinstance(row, list) or len(row) < 6:
+                            continue
+                        expr = str(row[0] or "").strip()
+                        reading = str(row[1] or expr).strip()
+                        def_tags = str(row[2] or "").strip()
+                        rules = str(row[3] or "").strip()
                         try:
-                            seq = int(row[6])
+                            score = int(row[4] or 0)
                         except (TypeError, ValueError):
-                            seq = 0
-                    term_tags = str(row[7] or "").strip() if len(row) > 7 else ""
+                            score = 0
+                        raw_gloss = row[5] if isinstance(row[5], list) else []
+                        seq = 0
+                        if len(row) > 6 and row[6] is not None:
+                            try:
+                                seq = int(row[6])
+                            except (TypeError, ValueError):
+                                seq = 0
+                        term_tags = str(row[7] or "").strip() if len(row) > 7 else ""
 
-                    if not expr:
-                        continue
+                        if not expr:
+                            continue
 
-                    senses = extract_plain_senses(raw_gloss)
-                    if not senses:
-                        continue
+                        senses = extract_plain_senses(raw_gloss)
+                        if not senses:
+                            continue
 
-                    pos_combined = " ".join(filter(None, [def_tags, term_tags])).strip()
-                    batch.append((
-                        source_label,
-                        seq,
-                        expr,
-                        reading,
-                        rules,
-                        pos_combined,
-                        json.dumps(senses[:8], ensure_ascii=False),
-                        base_freq,
-                        score,
-                    ))
-                    if len(batch) >= 4000:
-                        cur.executemany(
-                            """
-                            INSERT INTO dict_entries
-                            (source, seq_id, kanji, reading, rules, pos_tags, senses_json, freq_rank, score)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            batch,
-                        )
-                        # Короткая транзакция на каждую пачку: база не держит write-lock долго
-                        conn.commit()
-                        inserted += len(batch)
-                        batch.clear()
+                        pos_combined = " ".join(filter(None, [def_tags, term_tags])).strip()
+                        batch.append((
+                            source_label,
+                            seq,
+                            expr,
+                            reading,
+                            rules,
+                            pos_combined,
+                            json.dumps(senses[:8], ensure_ascii=False),
+                            base_freq,
+                            score,
+                        ))
+                        if len(batch) >= 4000:
+                            cur.executemany(
+                                """
+                                INSERT INTO dict_entries
+                                (source, seq_id, kanji, reading, rules, pos_tags, senses_json, freq_rank, score)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                batch,
+                            )
+                            inserted += len(batch)
+                            batch.clear()
 
-        if batch:
-            cur.executemany(
-                """
-                INSERT INTO dict_entries
-                (source, seq_id, kanji, reading, rules, pos_tags, senses_json, freq_rank, score)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                batch,
-            )
-            inserted += len(batch)
+            if batch:
+                cur.executemany(
+                    """
+                    INSERT INTO dict_entries
+                    (source, seq_id, kanji, reading, rules, pos_tags, senses_json, freq_rank, score)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    batch,
+                )
+                inserted += len(batch)
 
-        conn.commit()
-        # Возвращаем WAL-режим после быстрой пакетной вставки
-        cur.execute("PRAGMA synchronous = NORMAL;")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cur.execute("PRAGMA synchronous = NORMAL;")
 
     logger.info(f"[Dictionary] Импортировано {inserted} статей из '{zip_path.name}' (source={source_label}).")
     return inserted

@@ -12,6 +12,7 @@
 import type React from "react"
 import type { TextBlock } from "@/lib/types"
 import type { EditAction, DrawRect } from "@/hooks/use-box-transform"
+import type { JapPlatePlacement } from "./jap-overlay-placement"
 
 export interface BubbleOverlayItemProps {
   box: TextBlock
@@ -20,6 +21,8 @@ export interface BubbleOverlayItemProps {
   isSelected: boolean
   showTypeset: boolean
   showJapOverlay?: boolean
+  /** Вычисленная централизованно свободная позиция плашки JP (нормализованные координаты страницы). */
+  autoJapPlacement?: JapPlatePlacement | null
   imgElement: HTMLImageElement | null
   isEditingCurrent: boolean
   editType: EditAction | null

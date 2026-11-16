@@ -8,6 +8,7 @@ from database import get_db, db_session
 from services.cleaner import clean_speech_bubble, load_image_cv2, save_image_cv2, release_vram
 from services.page_service_ops.active_settings import get_active_global_settings
 from logger import logger
+from ml.models import ml
 
 
 def clean_page_bubbles_service(page_id: int, clean_mode: str = "auto") -> Tuple[str, str, Dict[str, int]]:
@@ -27,6 +28,7 @@ def clean_page_bubbles_service(page_id: int, clean_mode: str = "auto") -> Tuple[
 
     cfg = get_active_global_settings()
     clean_model_name = cfg.get("clean_model") or "anime-manga-big-lama.pt"
+    ml.lama_downscale = bool(cfg.get("lama_downscale", 0))
 
     if not blocks:
         raise ValueError("Нет размеченных баблов для очистки")

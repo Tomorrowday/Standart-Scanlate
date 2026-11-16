@@ -7,8 +7,11 @@ from typing import Any, Dict, List, Optional, Tuple
 from PIL import Image
 
 from database import get_db
-from schemas import OcrRequest
+from schemas import OcrRequest, TranslationRequest, BatchTranslationRequest
+from ml.models import ml
+from services.translator import translate_single_text, translate_batch_items
 from services.ocr import ocr_image_region
+from routers.chapters_handlers.translate_chapter import _translate_chapter_via_ollama
 
 _ocr_cache_lock = threading.Lock()
 _cached_page_image: Tuple[Optional[int], Optional[float], Optional[Image.Image]] = (None, None, None)
@@ -128,19 +131,105 @@ def perform_ocr(req: OcrRequest):
             other_boxes=other_boxes,
         )
 
+        # Если блок уже сохранён в БД (например, пользователь переключил страницу во время авто-OCR),
+        # записываем распознанный текст напрямую в БД, чтобы он не пропал
+        if req.block_id and text:
+            from database import db_session
+            with db_session() as cur:
+                cur.execute(
+                    """
+                    UPDATE text_blocks
+                    SET jap_text = ?,
+                        status = CASE WHEN status = 'translated' THEN 'translated' ELSE 'ocr-done' END
+                    WHERE id = ? AND page_id = ? AND (jap_text IS NULL OR TRIM(jap_text) = '')
+                    """,
+                    (text, str(req.block_id), req.page_id),
+                )
+
         return {"success": True, "text": text}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
-def translate_text_stub():
-    """Заглушка: перевод вынесен на клиент (Ollama) и в раздельный JSON-экспорт."""
-    return {
-        "success": False,
-        "error": "Облачный перевод отключен. Используйте Export JSON для Claude/ChatGPT или локальную Ollama."
-    }
+def translate_text_endpoint(req: TranslationRequest):
+    """Одиночный перевод реплики через Gemini или локальную Ollama."""
+    text = (req.text or "").strip()
+    if not text:
+        return {"success": True, "translated": ""}
+
+    try:
+        if ml.gemini_model:
+            translated = translate_single_text(text, req.title_description or "")
+        else:
+            glossary_rows = [
+                {"jap_word": k, "rus_word": v, "context": ""}
+                for k, v in (req.glossary or {}).items()
+            ]
+            res_map = _translate_chapter_via_ollama(
+                [{"id": "single", "text": text, "speaker": "", "class_id": 0}],
+                title_description=req.title_description or req.context or "",
+                glossary_rows=glossary_rows,
+            )
+            translated = res_map.get("single", "")
+        return {"success": True, "translated": translated}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
-def translate_batch_stub():
-    """Заглушка пакетного перевода."""
-    return {"success": False, "translations": {}}
+def translate_batch_endpoint(req: BatchTranslationRequest):
+    """Пакетный перевод реплик страницы с автоматической подгрузкой глоссария и синопсиса тайтла по page_id."""
+    if not req.items:
+        return {"success": True, "translations": {}}
+
+    title_desc = (req.title_description or "").strip()
+    glossary_rows: List[Dict[str, Any]] = []
+
+    if req.page_id:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT t.id as title_id, t.description
+                FROM pages p
+                JOIN chapters c ON c.id = p.chapter_id
+                JOIN titles t ON t.id = c.title_id
+                WHERE p.id = ?
+                """,
+                (req.page_id,),
+            )
+            t_row = cur.fetchone()
+            if t_row:
+                if not title_desc:
+                    title_desc = t_row["description"] or ""
+                cur.execute(
+                    "SELECT jap_word, rus_word, context FROM glossary WHERE title_id = ?",
+                    (t_row["title_id"],),
+                )
+                glossary_rows = [dict(r) for r in cur.fetchall()]
+
+    try:
+        if ml.gemini_model:
+            translations = translate_batch_items(req.items, title_desc, glossary_rows)
+        else:
+            dialogue_items = [
+                {
+                    "id": it.id,
+                    "text": it.text,
+                    "speaker": it.speaker or "",
+                    "class_id": it.class_id or 0,
+                }
+                for it in req.items
+            ]
+            translations = _translate_chapter_via_ollama(
+                dialogue_items,
+                title_description=title_desc,
+                glossary_rows=glossary_rows,
+            )
+        return {"success": True, "translations": translations}
+    except Exception as e:
+        return {"success": False, "error": str(e), "translations": {}}
+
+
+# Алиасы на случай внешних вызовов старых имён
+translate_text_stub = translate_text_endpoint
+translate_batch_stub = translate_batch_endpoint

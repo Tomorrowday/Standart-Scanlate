@@ -7,6 +7,7 @@ set "PIP_CACHE_DIR=%~dp0weights\cache\pip"
 set "NPM_CONFIG_CACHE=%~dp0weights\cache\npm"
 set "HF_HOME=%~dp0weights\cache\huggingface"
 set "TORCH_HOME=%~dp0weights\cache\torch"
+set "TORCHINDUCTOR_CACHE_DIR=%~dp0weights\cache\torchinductor"
 
 echo ===================================================
 echo   Запуск Manga Translator - RTX 50-series cu128

@@ -8,9 +8,11 @@ def get_page_details(page_id: int):
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT p.id, p.chapter_id, p.page_number, p.file_path, p.clean_path, p.status, c.title_id
+            SELECT p.id, p.chapter_id, p.page_number, p.file_path, p.clean_path, p.status,
+                   c.title_id, t.default_font_size
             FROM pages p
             JOIN chapters c ON c.id = p.chapter_id
+            JOIN titles t ON t.id = c.title_id
             WHERE p.id = ?
             """,
             (page_id,)

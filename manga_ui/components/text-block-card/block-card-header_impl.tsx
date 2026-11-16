@@ -46,6 +46,9 @@ export function BlockCardHeader({
   index,
   pageId,
   autoOvalBubble = true,
+  fontBubble = "v_CCFaceFront",
+  fontThought = "v_CCFaceFront",
+  fontSfx = "v_Mighty Zeo 2.0",
   onChange,
   onDelete,
   onMoveUp,
@@ -77,13 +80,6 @@ export function BlockCardHeader({
     }
   }, [pageId, ocrLoading, block.id, block.x, block.y, block.width, block.height, block.rotation, block.class_id, block.status, onChange])
 
-  useEffect(() => {
-    if (block.status === "new" && pageId && !block.japText) {
-      handleOcr()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // Подписка на глобальное событие хоткея одиночного OCR [O]
   useEffect(() => {
     const onHotkeyOcr = (e: Event) => {
@@ -105,7 +101,12 @@ export function BlockCardHeader({
     const nextClass = (currentClassId + 1) % 4
     const hasTranslation = Boolean(block.rusText && block.rusText.trim())
     const nextShape = nextClass === 0 && autoOvalBubble && hasTranslation ? "ellipse" : "rect"
-    onChange({ class_id: nextClass, shape: nextShape })
+
+    let nextFont = fontBubble
+    if (nextClass === 1) nextFont = fontThought
+    if (nextClass === 2 || nextClass === 3) nextFont = fontSfx
+
+    onChange({ class_id: nextClass, shape: nextShape, fontFamily: nextFont })
   }
 
   const isEllipse = block.shape === "ellipse"

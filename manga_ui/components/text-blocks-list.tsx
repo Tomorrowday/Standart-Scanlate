@@ -15,6 +15,9 @@ export interface TextBlocksListProps {
   showJapOverlay?: boolean
   defaultFontSize?: number
   autoOvalBubble?: boolean
+  fontBubble?: string
+  fontThought?: string
+  fontSfx?: string
   onSelect: (id: string) => void
   onUpdate: (id: string, patch: Partial<TextBlock>) => void
   onDelete: (id: string) => void

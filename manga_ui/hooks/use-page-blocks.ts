@@ -29,6 +29,7 @@ export interface UsePageBlocksReturn {
   undo: () => Promise<void>
   redo: () => void
   recordCleanAction: () => void
+  discardLastSnapshot: () => void
   saveBlocks: (refreshSpeakers?: boolean) => Promise<void>
   saveBlocksExplicit: (targetPageId: number, blocksToSave: TextBlock[], refreshSpeakers?: boolean) => Promise<void>
   setNewPageBlocks: (newBlocks: TextBlock[]) => void

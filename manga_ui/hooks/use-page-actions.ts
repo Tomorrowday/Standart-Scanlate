@@ -21,6 +21,7 @@ export interface UsePageActionsProps {
   setBrushSize: React.Dispatch<React.SetStateAction<number>>
   setIsApplyingChapterFont: React.Dispatch<React.SetStateAction<boolean>>
   recordCleanAction: () => void
+  discardLastSnapshot: () => void
   handlePageStatusUpdate: (pageId: number, status: PageStatus, cleanPath?: string) => void
 }
 
@@ -51,6 +52,7 @@ export function usePageActions({
   setBrushSize,
   setIsApplyingChapterFont,
   recordCleanAction,
+  discardLastSnapshot,
   handlePageStatusUpdate,
 }: UsePageActionsProps): UsePageActionsReturn {
   const handleBrushClean = useCallback(
@@ -64,14 +66,16 @@ export function usePageActions({
           setViewMode("clean")
           setCleanCacheBuster(Date.now())
         } else {
+          discardLastSnapshot()
           alert("Ошибка кисти: " + (res.error || "Неизвестная ошибка"))
         }
       } catch (e) {
+        discardLastSnapshot()
         console.error("Ошибка применения кисти:", e)
         alert("Ошибка кисти: " + String(e))
       }
     },
-    [currentPage, handlePageStatusUpdate, recordCleanAction, setViewMode, setCleanCacheBuster]
+    [currentPage, handlePageStatusUpdate, recordCleanAction, discardLastSnapshot, setViewMode, setCleanCacheBuster]
   )
 
   const handleOcrSingleBlock = useCallback(

@@ -1,7 +1,7 @@
 from typing import Dict, List, Any
 from fastapi import HTTPException
 
-from database import get_db
+from database import get_db, db_session
 from config import natural_sort_key, get_available_detectors, get_available_cleaners
 from logger import logger
 
@@ -56,11 +56,10 @@ def get_project_tree(title_id: int):
 
 def delete_project(title_id: int):
     try:
-        with get_db() as conn:
-            cur = conn.cursor()
+        with db_session() as cur:
             cur.execute("DELETE FROM titles WHERE id = ?", (title_id,))
-            conn.commit()
-            conn.execute("VACUUM")
+        with get_db() as conn:
+            conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
         return {"success": True, "message": "Проект успешно удалён"}
     except Exception as e:
         logger.error(f"Ошибка при удалении проекта {title_id}: {e}")

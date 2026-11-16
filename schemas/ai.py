@@ -25,6 +25,7 @@ class BatchTranslateItem(BaseModel):
     text: str
     speaker: Optional[str] = ""
     order_index: Optional[int] = 0
+    class_id: Optional[int] = 0
 
 
 class BatchTranslationRequest(BaseModel):

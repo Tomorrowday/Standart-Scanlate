@@ -9,6 +9,7 @@ from schemas.blocks import BrushCleanRequest
 from routers.pages_handlers.common import _backup_clean_file_if_exists
 from services.cleaner import inpaint_by_brush_mask, load_image_cv2, save_image_cv2, release_vram
 from services.page_service import get_active_global_settings
+from ml.models import ml
 
 
 def brush_clean_page(page_id: int, req: BrushCleanRequest):
@@ -57,6 +58,7 @@ def brush_clean_page(page_id: int, req: BrushCleanRequest):
 
     cfg = get_active_global_settings()
     clean_model_name = cfg.get("clean_model") or "anime-manga-big-lama.pt"
+    ml.lama_downscale = bool(cfg.get("lama_downscale", 0))
 
     try:
         inpaint_by_brush_mask(image, mask_img, mode=req.mode or "lama", clean_model_name=clean_model_name)

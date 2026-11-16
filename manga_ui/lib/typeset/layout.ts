@@ -19,5 +19,6 @@ export {
   joinLinesRemovingSoftHyphens,
   hasManualLineBreaks,
   stripForcedSingleLineMarker,
+  projectLinesToOriginalCase,
   FORCED_SINGLE_LINE_MARKER,
 } from "./layout_impl"

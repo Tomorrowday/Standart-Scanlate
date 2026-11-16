@@ -41,6 +41,7 @@ export interface PageItem {
   id: number
   chapter_id: number
   title_id?: number
+  default_font_size?: number
   page_number: number
   file_path: string
   clean_path?: string

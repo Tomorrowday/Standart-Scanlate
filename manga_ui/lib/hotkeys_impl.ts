@@ -64,7 +64,7 @@ export const DEFAULT_HOTKEYS: HotkeyConfig = {
 }
 
 export function matchHotkey(e: KeyboardEvent, binding: HotkeyBinding): boolean {
-  if (!binding) return false
+  if (!binding || !binding.code) return false
   const reqCtrl = Boolean(binding.ctrl)
   const reqShift = Boolean(binding.shift)
   const reqAlt = Boolean(binding.alt)
@@ -86,7 +86,6 @@ export function matchHotkey(e: KeyboardEvent, binding: HotkeyBinding): boolean {
 
   if (binding.code === "Equal" && (e.code === "NumpadAdd" || e.key === "+")) return true
   if (binding.code === "Minus" && (e.code === "NumpadSubtract" || e.key === "-")) return true
-  if (binding.code === "Delete" && e.code === "Backspace") return true
 
   return false
 }
@@ -107,7 +106,9 @@ export function formatKeyEvent(e: KeyboardEvent): {
   const alt = e.altKey
 
   let keyName = e.code
-  if (keyName.startsWith("Key")) keyName = keyName.replace("Key", "")
+  if (!keyName) {
+    keyName = "Не назначено"
+  } else if (keyName.startsWith("Key")) keyName = keyName.replace("Key", "")
   else if (keyName.startsWith("Digit")) keyName = keyName.replace("Digit", "")
   else if (keyName === "Equal") keyName = "+"
   else if (keyName === "Minus") keyName = "-"

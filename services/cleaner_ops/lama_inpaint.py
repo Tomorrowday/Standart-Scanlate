@@ -10,24 +10,12 @@ import torch
 
 from ml.models import ml
 from config import LAMA_FORCE_GRAYSCALE, MAX_LAMA_DIM
-from database import get_db
-from logger import logger
 
 from services.cleaner_ops.image_io import is_patch_monochrome
 from services.cleaner_ops.white_bubble import _create_shape_mask
 
 
 def inpaint_patch_with_lama(patch_bgr: np.ndarray, mask: np.ndarray, clean_model_name: str = "") -> np.ndarray:
-    try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT lama_downscale FROM global_settings WHERE id = 1")
-            row = cur.fetchone()
-            if row:
-                ml.lama_downscale = bool(row["lama_downscale"])
-    except Exception as e:
-        logger.debug(f"Не удалось прочитать lama_downscale из global_settings: {e}")
-
     model = ml.load_cleaner(clean_model_name)
     if model is None:
         return patch_bgr

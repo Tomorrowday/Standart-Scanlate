@@ -64,8 +64,17 @@ export function HotkeysModal({ onClose }: HotkeysModalProps) {
       })
 
       if (existingConflict) {
-        setConflictMessage(`Клавиша ${formatted.label} уже занята действием "${hotkeys[existingConflict].name}"`)
-        setTimeout(() => setConflictMessage(null), 3000)
+        setConflictMessage(
+          `Клавиша ${formatted.label} переназначена (снята с действия "${hotkeys[existingConflict].name}")`
+        )
+        setTimeout(() => setConflictMessage(null), 3500)
+        updateHotkey(existingConflict, {
+          code: "",
+          ctrl: false,
+          shift: false,
+          alt: false,
+          label: "—",
+        })
       }
 
       updateHotkey(recordingAction, {

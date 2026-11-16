@@ -18,6 +18,7 @@
    - font_thought TEXT DEFAULT 'v_CCFaceFront'
    - font_sfx TEXT DEFAULT 'v_Mighty Zeo 2.0'
    - lama_downscale INTEGER DEFAULT 0
+   - export_format TEXT DEFAULT 'png' ('png', 'webp', 'avif')
 
 2. titles:
    - id INTEGER PRIMARY KEY AUTOINCREMENT
@@ -34,6 +35,9 @@
    - volume_number TEXT DEFAULT '1'
    - chapter_number TEXT NOT NULL
    - folder_path TEXT
+   - work_seconds INTEGER DEFAULT 0
+   - timer_started_at INTEGER DEFAULT NULL
+   - timer_last_seen_at INTEGER DEFAULT NULL (heartbeat активности)
 
 4. pages:
    - id INTEGER PRIMARY KEY AUTOINCREMENT
@@ -128,7 +132,8 @@ def init_db():
                 font_sfx TEXT DEFAULT 'v_Mighty Zeo 2.0',
                 lama_downscale INTEGER DEFAULT 0,
                 show_sfx INTEGER DEFAULT 0,
-                dict_nlp_mode TEXT DEFAULT 'auto'
+                dict_nlp_mode TEXT DEFAULT 'auto',
+                export_format TEXT DEFAULT 'png'
             )
         ''')
 
@@ -138,6 +143,7 @@ def init_db():
             "show_sfx INTEGER DEFAULT 0",
             "dict_nlp_mode TEXT DEFAULT 'auto'",
             "ocr_model TEXT DEFAULT 'manga-ocr-base'",
+            "export_format TEXT DEFAULT 'png'",
         ]:
             try:
                 cursor.execute(f"ALTER TABLE global_settings ADD COLUMN {col_def}")
@@ -151,8 +157,8 @@ def init_db():
                 INSERT INTO global_settings (
                     id, default_font_size, detector_model, clean_model, ocr_model, detect_conf,
                     auto_oval_bubble, default_padding, default_hyphenation,
-                    font_bubble, font_thought, font_sfx, lama_downscale, show_sfx, dict_nlp_mode
-                ) VALUES (1, 14, 'yolo_manga.pt', 'anime-manga-big-lama.pt', 'manga-ocr-base', 0.25, 1, 'safe', 1, 'v_CCFaceFront', 'v_CCFaceFront', 'v_Mighty Zeo 2.0', 0, 0, 'auto')
+                    font_bubble, font_thought, font_sfx, lama_downscale, show_sfx, dict_nlp_mode, export_format
+                ) VALUES (1, 14, 'yolo_manga.pt', 'anime-manga-big-lama.pt', 'manga-ocr-base', 0.25, 1, 'safe', 1, 'v_CCFaceFront', 'v_CCFaceFront', 'v_Mighty Zeo 2.0', 0, 0, 'auto', 'png')
             ''')
 
         # Убираем сломанный простой lama, чтобы LaMa всегда был доступен
@@ -181,6 +187,7 @@ def init_db():
                 folder_path TEXT,
                 work_seconds INTEGER DEFAULT 0,
                 timer_started_at INTEGER DEFAULT NULL,
+                timer_last_seen_at INTEGER DEFAULT NULL,
                 cached_replicas_count INTEGER DEFAULT NULL,
                 cached_words_count INTEGER DEFAULT NULL,
                 FOREIGN KEY (title_id) REFERENCES titles(id) ON DELETE CASCADE
@@ -190,6 +197,7 @@ def init_db():
         for col_def in [
             "work_seconds INTEGER DEFAULT 0",
             "timer_started_at INTEGER DEFAULT NULL",
+            "timer_last_seen_at INTEGER DEFAULT NULL",
             "cached_replicas_count INTEGER DEFAULT NULL",
             "cached_words_count INTEGER DEFAULT NULL",
         ]:
@@ -197,6 +205,20 @@ def init_db():
                 cursor.execute(f"ALTER TABLE chapters ADD COLUMN {col_def}")
             except Exception:
                 pass
+
+        # Закрываем сессии таймера, зависшие с прошлого запуска сервера.
+        # Засчитываем время только до последнего heartbeat, чтобы закрытый браузер
+        # или убитый батник не начислили часы простоя.
+        cursor.execute(
+            """
+            UPDATE chapters
+            SET work_seconds = COALESCE(work_seconds, 0)
+                    + MAX(0, COALESCE(timer_last_seen_at, timer_started_at) - timer_started_at),
+                timer_started_at = NULL,
+                timer_last_seen_at = NULL
+            WHERE timer_started_at IS NOT NULL
+            """
+        )
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS pages (

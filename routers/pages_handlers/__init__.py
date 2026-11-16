@@ -3,7 +3,7 @@ from routers.pages_handlers.common import (
     _backup_clean_file_if_exists,
     serve_image_file_safely,
 )
-from routers.pages_handlers.vram import release_vram_endpoint
+from routers.pages_handlers.vram import release_vram_endpoint, unload_all_models_endpoint
 from routers.pages_handlers.page_details import get_page_details
 from routers.pages_handlers.page_speakers import get_page_speakers
 from routers.pages_handlers.page_images import get_page_image, get_page_clean_image
@@ -23,6 +23,7 @@ __all__ = [
     "_backup_clean_file_if_exists",
     "serve_image_file_safely",
     "release_vram_endpoint",
+    "unload_all_models_endpoint",
     "get_page_details",
     "get_page_speakers",
     "get_page_image",

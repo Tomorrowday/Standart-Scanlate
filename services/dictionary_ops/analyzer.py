@@ -56,6 +56,19 @@ class MangaDictionaryEngine(
 
         ensure_jp_dict_schema(self.dict_db_path)
 
+    def unload_models(self) -> None:
+        """Полностью выгружает пайплайны spaCy/GiNZA и SudachiPy из RAM.
+
+        Вызывается кнопкой «Очистить VRAM/RAM» в шапке редактора. После сброса
+        анализатор лениво переинициализирует нужный бэкенд при следующем запросе.
+        """
+        with self._nlp_lock:
+            self._spacy_nlp_map.clear()
+            self._sudachi_tokenizer = None
+            self._sudachi_split_mode = None
+            self._sudachi_mode_a = None
+            self._active_nlp_backend = "uninitialized"
+
     def get_nlp_info(self) -> Dict[str, Any]:
         if self._active_nlp_backend == "uninitialized":
             self._init_sudachi()

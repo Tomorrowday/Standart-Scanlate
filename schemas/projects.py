@@ -29,6 +29,7 @@ class UpdateTitleSettingsRequest(BaseModel):
     lama_downscale: Optional[bool] = None
     show_sfx: Optional[bool] = None
     dict_nlp_mode: Optional[str] = None
+    export_format: Optional[str] = None
 
 
 class GlossaryItemCreate(BaseModel):

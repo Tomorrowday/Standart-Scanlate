@@ -23,6 +23,7 @@ import {
   Square,
   Clock,
   BarChart3,
+  ZapOff,
 } from "lucide-react"
 import { useHotkeysConfig } from "@/hooks/use-manga-hotkeys"
 
@@ -42,6 +43,9 @@ export interface TranslatorHeaderProps {
   timerSeconds: number
   onStartTimer: () => void
   onStopTimer: () => void
+  isUnloadingModels?: boolean
+  unloadMessage?: string | null
+  onUnloadModels?: () => void
   onOpenFolder: () => void
   onExportPage: () => void
   onSaveBlocks: () => void
@@ -78,6 +82,9 @@ export function TranslatorHeader({
   timerSeconds,
   onStartTimer,
   onStopTimer,
+  isUnloadingModels = false,
+  unloadMessage = null,
+  onUnloadModels,
   onOpenFolder,
   onExportPage,
   onSaveBlocks,
@@ -167,6 +174,30 @@ export function TranslatorHeader({
             Стоп
           </button>
         </div>
+
+        {/* Кнопка полной выгрузки нейросетей из VRAM и RAM */}
+        <button
+          type="button"
+          onClick={onUnloadModels}
+          disabled={isUnloadingModels}
+          className={[
+            "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
+            unloadMessage
+              ? "border-emerald-500/60 bg-emerald-600/20 text-emerald-300"
+              : "border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-white",
+            isUnloadingModels ? "opacity-60" : "",
+          ].join(" ")}
+          title="Полностью выгрузить YOLO, OCR, LaMa и NLP-модели словаря из VRAM и RAM"
+        >
+          {isUnloadingModels ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" />
+          ) : unloadMessage ? (
+            <Check className="h-3.5 w-3.5 text-emerald-400" />
+          ) : (
+            <ZapOff className="h-3.5 w-3.5 text-amber-400" />
+          )}
+          {unloadMessage ?? "Очистить VRAM"}
+        </button>
 
         {/* Кнопка открытия расширенной статистики тайтлов и глав */}
         <button

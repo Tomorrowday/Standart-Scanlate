@@ -1,9 +1,18 @@
-# Repomix отчёты, дампы и текстовые файлы
+# Секретные ключи и локальные конфиги
+.env
+*.env
+.env.*
+
+# Repomix отчёты, дампы и bat-скрипты
 repomix/**
 **/*.xml
 **/*.txt
 **/*.bat
 .repomixignore.bak
+
+# Задачи из agent todo исключаем, но остальную папку docs/ и AGENTS.md оставляем!
+docs/agent todo/**
+docs/agent?todo/**
 
 # Изображения, иконки и шрифты
 **/*.svg
@@ -11,6 +20,7 @@ repomix/**
 **/*.jpg
 **/*.jpeg
 **/*.webp
+**/*.avif
 **/*.ico
 **/*.woff
 **/*.woff2
@@ -22,28 +32,41 @@ manga_ui/.next/**
 manga_ui/public/**
 manga_ui/node_modules/**
 manga_ui/out/**
+manga_ui/.vercel/**
 
 # Python окружение, кэши и локальные данные
 venv/**
 .venv/**
+env/**
 **/__pycache__/**
 **/*.pyc
 data/**
 **/*.sqlite
 **/*.sqlite3
 **/*.db
+
+# Веса нейросетей и кэш моделей
 weights/**
+**/*.pt
+**/*.onnx
+**/*.bin
+**/*.safetensors
+Ultralytics/**
+
+# Логи и скрипты
 logs/**
+**/*.log
 scripts/**
 
 # IDE и системные файлы
 .git/**
 .idea/**
 .vscode/**
+.kilo/**
 **/.DS_Store
 **/Thumbs.db
 
-# Конфиги фронтенда и локфайлы
+# Вспомогательные конфиги фронтенда и локфайлы
 manga_ui/next-env.d.ts
 manga_ui/postcss.config.mjs
 manga_ui/components.json
@@ -51,5 +74,5 @@ manga_ui/pnpm-workspace.yaml
 **/package-lock.json
 **/pnpm-lock.yaml
 
-# временный кэш-файл компилятора TypeScript
+# Временный кэш компилятора TypeScript
 **/*.tsbuildinfo

@@ -26,6 +26,19 @@ export async function releaseVram() {
   }
 }
 
+export async function unloadAllModels(): Promise<{
+  success: boolean
+  vram_before_mb?: number
+  vram_after_mb?: number
+  freed_mb?: number
+  error?: string
+}> {
+  const res = await fetch(`${API_BASE_URL}/api/pages/unload-models`, {
+    method: "POST",
+  })
+  return await handleApiResponse(res, "Ошибка выгрузки моделей")
+}
+
 export async function getPageDetails(pageId: number): Promise<PageItem | null> {
   try {
     const res = await fetch(`${API_BASE_URL}/api/pages/${pageId}`)

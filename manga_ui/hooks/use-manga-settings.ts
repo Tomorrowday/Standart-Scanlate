@@ -14,6 +14,7 @@ const DEFAULT_GLOBAL_SETTINGS: TitleSettings = {
   font_thought: "v_CCFaceFront",
   font_sfx: "v_Mighty Zeo 2.0",
   show_sfx: false,
+  export_format: "png",
 }
 
 export interface UseMangaSettingsReturn {

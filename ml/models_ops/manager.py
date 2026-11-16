@@ -128,12 +128,46 @@ class MLManager:
     def release_vram(self):
         return release_vram()
 
-    def unload_all(self):
+    def unload_all(self) -> Dict[str, Any]:
+        """Полностью выгружает все модели (OCR, YOLO, LaMa, GiNZA/SudachiPy) из VRAM и RAM.
+
+        Возвращает статистику освобождённой видеопамяти в мегабайтах.
+        """
+        vram_before = 0.0
+        if torch.cuda.is_available():
+            vram_before = torch.cuda.memory_allocated() / (1024 * 1024)
+
         with self._lock:
             self._ocr_models.clear()
             self._yolo_models.clear()
             self._cleaners.clear()
-        release_vram()
+
+        # Словарные NLP-пайплайны живут в отдельном движке. Импорт внутри метода,
+        # чтобы не создавать циклическую зависимость ml -> services при старте.
+        try:
+            from services.dictionary_ops.analyzer import dict_engine
+            dict_engine.unload_models()
+        except Exception as e:
+            logger.warning(f"Не удалось выгрузить NLP-модели словаря: {e}")
+
+        self.gemini_model = None
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        vram_after = 0.0
+        if torch.cuda.is_available():
+            vram_after = torch.cuda.memory_allocated() / (1024 * 1024)
+
+        logger.info(
+            f"Все ML-модели выгружены: VRAM до {vram_before:.1f} МБ, после {vram_after:.1f} МБ."
+        )
+        return {
+            "vram_before_mb": round(vram_before, 1),
+            "vram_after_mb": round(vram_after, 1),
+            "freed_mb": round(max(0.0, vram_before - vram_after), 1),
+        }
 
 
 # Экземпляры синглтона

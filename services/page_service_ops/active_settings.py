@@ -27,4 +27,5 @@ def get_active_global_settings() -> Dict[str, Any]:
         "font_sfx": "v_Mighty Zeo 2.0",
         "lama_downscale": 0,
         "show_sfx": 0,
+        "export_format": "png",
     }

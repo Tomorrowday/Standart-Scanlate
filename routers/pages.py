@@ -21,6 +21,12 @@ def release_vram_endpoint():
     return _h.release_vram_endpoint()
 
 
+@router.post("/unload-models")
+def unload_all_models_endpoint():
+    """Полная выгрузка всех нейросетей (YOLO, OCR, LaMa, GiNZA) из VRAM и RAM."""
+    return _h.unload_all_models_endpoint()
+
+
 @router.get("/{page_id}")
 def get_page_details(page_id: int):
     """Информация о странице и путях к оригинальному и заклиненному сканам."""

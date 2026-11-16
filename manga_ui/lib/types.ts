@@ -10,6 +10,8 @@ export type PaddingMode = "safe" | "fit"
 
 export type TextColor = "black" | "white"
 
+export type ExportFormat = "png" | "webp" | "avif"
+
 export interface TextBlock {
   id: string
   class_id?: number // 0: Bubble (Речь), 1: Thought (Мысли), 2: Free Text (Арт), 3: SFX (Звуки)
@@ -73,6 +75,7 @@ export interface TitleSettings {
   lama_downscale?: boolean
   show_sfx?: boolean
   dict_nlp_mode?: "auto" | "sudachi" | "electra" | "bert_large"
+  export_format?: ExportFormat
   available_detectors?: Record<string, string>
   available_ocr_models?: Record<string, string>
   available_cleaners?: Record<string, string>

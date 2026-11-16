@@ -25,7 +25,7 @@ import { TextBlocksList } from "@/components/text-blocks-list"
 import { HotkeysModal } from "@/components/hotkeys-modal"
 import { SettingsModal } from "@/components/settings-modal"
 import { StatisticsModal } from "@/components/statistics-modal"
-import { openTranslatedFolder, getPageImageUrl, getPageCleanImageUrl } from "@/lib/api"
+import { openTranslatedFolder, getPageImageUrl, getPageCleanImageUrl, unloadAllModels } from "@/lib/api"
 import { useMangaHotkeys } from "@/hooks/use-manga-hotkeys"
 import { usePageBlocks } from "@/hooks/use-page-blocks"
 import { usePagePipelines } from "@/hooks/use-page-pipelines"
@@ -53,6 +53,28 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
   const [showHotkeysModal, setShowHotkeysModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [showStatisticsModal, setShowStatisticsModal] = useState(false)
+
+  // Полная выгрузка моделей из VRAM/RAM (кнопка в шапке)
+  const [isUnloadingModels, setIsUnloadingModels] = useState(false)
+  const [unloadMessage, setUnloadMessage] = useState<string | null>(null)
+
+  const handleUnloadModels = useCallback(async () => {
+    if (isUnloadingModels) return
+    setIsUnloadingModels(true)
+    setUnloadMessage(null)
+    try {
+      const res = await unloadAllModels()
+      if (!res?.success) throw new Error(res?.error || "Ошибка выгрузки")
+      const freed = res.freed_mb ?? 0
+      setUnloadMessage(freed > 0 ? `Освобождено: ${Math.round(freed)} МБ` : "Память очищена")
+    } catch (err) {
+      console.warn("Не удалось выгрузить модели:", err)
+      setUnloadMessage("Ошибка очистки")
+    } finally {
+      setIsUnloadingModels(false)
+      setTimeout(() => setUnloadMessage(null), 2500)
+    }
+  }, [isUnloadingModels])
 
   const currentChapterId = currentPage?.chapter_id || chapterPages[0]?.chapter_id || null
 
@@ -211,6 +233,9 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
         timerSeconds={timerSeconds}
         onStartTimer={handleStartTimer}
         onStopTimer={handleStopTimer}
+        isUnloadingModels={isUnloadingModels}
+        unloadMessage={unloadMessage}
+        onUnloadModels={handleUnloadModels}
         onOpenFolder={() => currentPage && openTranslatedFolder(currentPage.id)}
         onExportPage={pipelines.handleExportPage}
         onSaveBlocks={() => blocks.saveBlocks(true)}

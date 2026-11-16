@@ -2,6 +2,7 @@ import time
 from typing import Dict, List, Any
 from database import get_db
 from config import natural_sort_key
+from routers.chapters_handlers.chapter_timer import STALE_TIMER_TIMEOUT_SEC
 
 
 def get_all_detailed_stats():
@@ -25,6 +26,7 @@ def get_all_detailed_stats():
                 c.folder_path,
                 c.work_seconds,
                 c.timer_started_at,
+                c.timer_last_seen_at,
                 c.cached_replicas_count,
                 c.cached_words_count,
                 COUNT(p.id) AS pages_count
@@ -57,8 +59,19 @@ def get_all_detailed_stats():
 
             base_sec = ch.get("work_seconds") or 0
             timer_start = ch.get("timer_started_at")
-            is_timer_running = timer_start is not None
-            session_sec = max(0, now - int(timer_start)) if is_timer_running else 0
+            timer_last_seen = ch.get("timer_last_seen_at")
+            if timer_start is not None:
+                last_seen = timer_last_seen if timer_last_seen is not None else timer_start
+                if now - int(last_seen) > STALE_TIMER_TIMEOUT_SEC:
+                    # Зависшая сессия: засчитываем время только до последнего heartbeat
+                    is_timer_running = False
+                    session_sec = max(0, int(last_seen) - int(timer_start))
+                else:
+                    is_timer_running = True
+                    session_sec = max(0, now - int(timer_start))
+            else:
+                is_timer_running = False
+                session_sec = 0
             total_ch_sec = base_sec + session_sec
 
             reps = ch.get("cached_replicas_count")

@@ -3,7 +3,8 @@
 
 "use client"
 
-import { Volume2, Layers, CircleDot, Maximize2, WrapText } from "lucide-react"
+import { Volume2, Layers, CircleDot, Maximize2, WrapText, FileImage } from "lucide-react"
+import type { ExportFormat } from "@/lib/types"
 
 export interface SettingsTogglesTabProps {
   showSfx: boolean
@@ -16,6 +17,8 @@ export interface SettingsTogglesTabProps {
   onDefaultPaddingChange: (value: "safe" | "fit") => void
   defaultHyphenation: boolean
   onDefaultHyphenationChange: (value: boolean) => void
+  exportFormat: ExportFormat
+  onExportFormatChange: (value: ExportFormat) => void
 }
 
 export function SettingsTogglesTab({
@@ -29,9 +32,51 @@ export function SettingsTogglesTab({
   onDefaultPaddingChange,
   defaultHyphenation,
   onDefaultHyphenationChange,
+  exportFormat,
+  onExportFormatChange,
 }: SettingsTogglesTabProps) {
   return (
     <div className="space-y-4">
+
+      {/* Формат экспорта готовых страниц */}
+      <div className="flex items-start justify-between rounded-xl border border-slate-800 bg-slate-950 p-4 transition-colors hover:border-slate-700">
+        <div className="space-y-1 pr-4">
+          <div className="flex items-center gap-2">
+            <FileImage className="h-4 w-4 text-sky-400" />
+            <label className="text-xs font-semibold text-slate-200">
+              Формат экспорта готовых страниц (Export Format)
+            </label>
+          </div>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            В каком формате запечённые страницы сохраняются в папку <strong>translated</strong>.<br />
+            <strong>PNG</strong> — без потерь, максимальный размер. <strong>WebP</strong> — сжатие без видимой потери качества. <strong>AVIF</strong> — максимальное сжатие.
+          </p>
+        </div>
+
+        <div className="flex items-center rounded-lg border border-slate-800 bg-slate-900 p-1 shrink-0">
+          {(
+            [
+              { value: "png", label: "PNG" },
+              { value: "webp", label: "WebP" },
+              { value: "avif", label: "AVIF" },
+            ] as Array<{ value: ExportFormat; label: string }>
+          ).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onExportFormatChange(opt.value)}
+              className={[
+                "rounded px-2.5 py-1 text-xs font-semibold transition-colors",
+                exportFormat === opt.value
+                  ? "bg-sky-600 text-white"
+                  : "text-slate-400 hover:text-slate-200",
+              ].join(" ")}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Тоггл: Детектирование звуков SFX */}
       <div className="flex items-start justify-between rounded-xl border border-slate-800 bg-slate-950 p-4 transition-colors hover:border-slate-700">

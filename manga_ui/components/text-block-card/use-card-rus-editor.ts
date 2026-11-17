@@ -51,15 +51,34 @@ export function useCardRusEditor({
 }: UseCardRusEditorProps): UseCardRusEditorReturn {
   const [isFocusedRus, setIsFocusedRus] = useState(false)
   const [localRusText, setLocalRusText] = useState(() => stripForcedSingleLineMarker(block.rusText))
+  const [fontsLoadedTick, setFontsLoadedTick] = useState(0)
 
   const { naturalW, naturalH } = usePageImageMetrics()
 
   const rusTextareaRef = useRef<HTMLTextAreaElement>(null)
   const snapshotLinesRef = useRef<string[]>([])
+  // Последний реально отправленный в блок storage-текст — защищает от
+  // повторного сохранения того же текста при onBlur (холостой шаг Undo).
+  const lastEmittedStorageRef = useRef<string>(block.rusText || "")
   // Был ли блок ручным до начала правки и менял ли пользователь разбивку строк.
   const wasManualBeforeEditRef = useRef(false)
   const hadForcedSingleLineRef = useRef(false)
   const userTouchedBreaksRef = useRef(false)
+
+  // Метрики шрифта нужно пересчитать после его реальной загрузки,
+  // иначе первая отрисовка карточки считается по запасному шрифту.
+  useEffect(() => {
+    if (typeof document !== "undefined" && document.fonts) {
+      document.fonts.ready.then(() => {
+        setFontsLoadedTick((t) => t + 1)
+      })
+    }
+  }, [block.fontFamily])
+
+  // Внешнее изменение текста (Undo / Redo / смена блока) сбрасывает защиту.
+  useEffect(() => {
+    lastEmittedStorageRef.current = block.rusText || ""
+  }, [block.rusText])
 
   const renderedLines = useMemo(() => {
     if (typeof document === "undefined") return (block.rusText || "").split(/\r?\n/)
@@ -132,6 +151,7 @@ export function useCardRusEditor({
     defaultFontSize,
     naturalW,
     naturalH,
+    fontsLoadedTick,
   ])
 
   useEffect(() => {
@@ -148,21 +168,35 @@ export function useCardRusEditor({
   const currentClassId = block.class_id ?? 0
 
   const saveStorageTextToBlock = (storageText: string) => {
+    const hasText = storageText.trim().length > 0
     const patch: Partial<TextBlock> = {
       rusText: storageText,
-      status: storageText.trim() ? "translated" : block.japText ? "ocr-done" : "new",
+      status: hasText ? "translated" : block.japText ? "ocr-done" : "new",
     }
     if (currentClassId === 0 && autoOvalBubble && !block.shape) {
-      patch.shape = storageText.trim().length > 0 ? "ellipse" : "rect"
+      patch.shape = hasText ? "ellipse" : "rect"
     } else if (
       currentClassId === 0 &&
       autoOvalBubble &&
-      storageText.trim().length > 0 &&
+      hasText &&
       block.shape === "rect" &&
       !block.rusText
     ) {
       patch.shape = "ellipse"
     }
+
+    const storedText = block.rusText || ""
+    const needsShapeChange = patch.shape !== undefined && patch.shape !== block.shape
+    const needsStatusChange = patch.status !== block.status
+
+    // Текст уже сохранён (например, при onBlur после живого ввода) и форма/статус
+    // не меняются — не создаём дублирующий снапшот в истории Undo.
+    if (storageText === storedText && !needsShapeChange && !needsStatusChange) {
+      lastEmittedStorageRef.current = storageText
+      return
+    }
+
+    lastEmittedStorageRef.current = storageText
     onChange(patch)
   }
 

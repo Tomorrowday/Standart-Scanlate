@@ -25,7 +25,6 @@ export async function executeExportPage(ctx: PagePipelineContext): Promise<void>
     globalSettings,
     saveBlocks,
     onPageStatusUpdate,
-    cleanCacheBuster,
     setIsExporting,
     setIsExportSuccess,
   } = ctx
@@ -45,7 +44,7 @@ export async function executeExportPage(ctx: PagePipelineContext): Promise<void>
     }
 
     const baseImgUrl = cleanPath
-      ? `${getPageCleanImageUrl(currentPage.id)}?t=${cleanCacheBuster}`
+      ? `${getPageCleanImageUrl(currentPage.id)}?t=${Date.now()}`
       : getPageImageUrl(currentPage.id)
 
     const baseImg = await loadImage(baseImgUrl)

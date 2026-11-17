@@ -4,6 +4,7 @@ from routers.projects_handlers.global_settings import (
     update_global_settings_endpoint,
     get_available_detectors_endpoint,
     get_available_cleaners_endpoint,
+    get_available_ocr_models_endpoint,
 )
 from routers.projects_handlers.scanner import (
     VALID_IMAGE_EXTENSIONS,
@@ -38,6 +39,7 @@ __all__ = [
     "update_global_settings_endpoint",
     "get_available_detectors_endpoint",
     "get_available_cleaners_endpoint",
+    "get_available_ocr_models_endpoint",
     "VALID_IMAGE_EXTENSIONS",
     "EXCLUDED_DIR_NAMES",
     "_scan_and_insert_chapters",

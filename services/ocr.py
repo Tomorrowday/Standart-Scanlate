@@ -1,36 +1,28 @@
 # services/ocr.py
 """
-Каркас сервиса оптического распознавания японского текста (MangaOCR).
-Реализация: services/ocr_impl.py
-Зависимости реализации: PIL, cv2, numpy, math, re, torch, ml.models (ml, release_vram)
+Сервис оптического распознавания японского текста (MangaOCR).
+Зависимости: PIL, cv2, numpy, math, re, torch, ml.models (ml, release_vram)
 """
 
 from typing import Any, Dict, List, Optional
 
 from PIL import Image
-import services.ocr_impl as _impl
+from services.ocr_ops import (
+    OCR_WHITE_BORDER,
+    _clean_ocr_crop_from_foreign_text,
+    _int_crop_box,
+    _mask_foreign_neighbor_regions_in_page_coords,
+    _recognize,
+    normalize_ocr_japanese_text,
+    ocr_image_region,
+)
 
-
-def normalize_ocr_japanese_text(text: str) -> str:
-    """Нормализует японскую пунктуацию после распознавания."""
-    return _impl.normalize_ocr_japanese_text(text)
-
-
-def ocr_image_region(
-    image: Image.Image,
-    x: float,
-    y: float,
-    width: float,
-    height: float,
-    rotation: float = 0.0,
-    class_id: int = 0,
-    other_boxes: Optional[List[Dict[str, Any]]] = None,
-) -> str:
-    """
-    Вырезает область бабла (с учетом поворота) и распознает японский текст через MangaOCR.
-    Кроп вырезается строго по рамке бабла, белое поле добавляется уже после очистки,
-    а пиксели соседних баблов (other_boxes) маскируются белым перед распознаванием.
-    """
-    return _impl.ocr_image_region(
-        image, x, y, width, height, rotation, class_id, other_boxes
-    )
+__all__ = [
+    "normalize_ocr_japanese_text",
+    "_mask_foreign_neighbor_regions_in_page_coords",
+    "_clean_ocr_crop_from_foreign_text",
+    "OCR_WHITE_BORDER",
+    "_int_crop_box",
+    "_recognize",
+    "ocr_image_region",
+]

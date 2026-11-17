@@ -10,6 +10,7 @@ export interface UsePageNavigationProps {
   currentPage: PageItem | null
   chapterPages: PageItem[]
   setCurrentPage: React.Dispatch<React.SetStateAction<PageItem | null>>
+  setChapterPages: React.Dispatch<React.SetStateAction<PageItem[]>>
   setCurrentTitleId: (titleId: number) => void
   setTitleFontSize?: (size: number) => void
   setIsDetecting?: (isDetecting: boolean) => void
@@ -27,7 +28,7 @@ export interface UsePageNavigationProps {
 }
 
 export interface UsePageNavigationReturn {
-  handleSelectPage: (page: PageItem, skipSave?: boolean) => Promise<void>
+  handleSelectPage: (page: PageItem, skipSave?: boolean, chapterPages?: PageItem[]) => Promise<void>
   handlePrevPage: () => Promise<void>
   handleNextPage: () => Promise<void>
   currentPageIdx: number
@@ -37,6 +38,7 @@ export function usePageNavigation({
   currentPage,
   chapterPages,
   setCurrentPage,
+  setChapterPages,
   setCurrentTitleId,
   setTitleFontSize,
   setIsDetecting,
@@ -66,11 +68,18 @@ export function usePageNavigation({
   const currentPageIdx = chapterPages.findIndex((p) => p.id === currentPage?.id)
 
   const handleSelectPage = useCallback(
-    async (page: PageItem, skipSave = false) => {
+    async (page: PageItem, skipSave = false, nextChapterPages?: PageItem[]) => {
       if (isSwitchingPageRef.current) return
       isSwitchingPageRef.current = true
 
       try {
+        // Список страниц новой главы переключаем только после защиты от гонки:
+        // иначе шапка и пакетные действия уедут на другую главу, а на экране
+        // останется страница старой.
+        if (nextChapterPages) {
+          setChapterPages(nextChapterPages)
+        }
+
         const prevPage = currentPageRef.current
         if (!skipSave && prevPage && isDirtyRef.current) {
           try {
@@ -166,6 +175,7 @@ export function usePageNavigation({
       saveBlocksExplicit,
       setCleanCacheBuster,
       setCurrentPage,
+      setChapterPages,
       setCurrentTitleId,
       setIsDetecting,
       setNewPageBlocks,

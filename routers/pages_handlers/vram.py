@@ -1,4 +1,6 @@
 from services.cleaner import release_vram
+from ml.models import ml
+from logger import logger
 
 
 def release_vram_endpoint():
@@ -6,4 +8,21 @@ def release_vram_endpoint():
         release_vram()
         return {"success": True}
     except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def unload_all_models_endpoint():
+    """Полностью выгружает все нейросети (YOLO, OCR, LaMa, GiNZA/SudachiPy) из VRAM и RAM."""
+    try:
+        stats = ml.unload_all()
+        logger.info(
+            "Ручная выгрузка моделей: освобождено {freed} МБ VRAM ({before} → {after} МБ).".format(
+                freed=stats.get("freed_mb", 0.0),
+                before=stats.get("vram_before_mb", 0.0),
+                after=stats.get("vram_after_mb", 0.0),
+            )
+        )
+        return {"success": True, **stats}
+    except Exception as e:
+        logger.error(f"Ошибка выгрузки моделей: {e}")
         return {"success": False, "error": str(e)}

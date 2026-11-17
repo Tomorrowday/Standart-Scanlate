@@ -10,6 +10,8 @@ export type PaddingMode = "safe" | "fit"
 
 export type TextColor = "black" | "white"
 
+export type ExportFormat = "png" | "webp" | "avif"
+
 export interface TextBlock {
   id: string
   class_id?: number // 0: Bubble (Речь), 1: Thought (Мысли), 2: Free Text (Арт), 3: SFX (Звуки)
@@ -61,6 +63,7 @@ export interface TitleSettings {
   description?: string
   default_font_size?: number
   detector_model?: string
+  ocr_model?: string
   clean_model?: string
   detect_conf?: number
   auto_oval_bubble?: boolean
@@ -72,7 +75,9 @@ export interface TitleSettings {
   lama_downscale?: boolean
   show_sfx?: boolean
   dict_nlp_mode?: "auto" | "sudachi" | "electra" | "bert_large"
+  export_format?: ExportFormat
   available_detectors?: Record<string, string>
+  available_ocr_models?: Record<string, string>
   available_cleaners?: Record<string, string>
 }
 

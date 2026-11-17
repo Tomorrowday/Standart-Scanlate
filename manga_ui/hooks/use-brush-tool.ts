@@ -1,11 +1,9 @@
 // manga_ui/hooks/use-brush-tool.ts
 /**
- * Контракт хука кисти ретуши и очистки (холст, мазки, экспорт маски).
- * Реализация: manga_ui/hooks/use-brush-tool_impl.ts
- * Зависимости реализации: react (useRef, useState, useCallback, useEffect), HTMLCanvasElement
+ * Хук кисти ретуши и очистки (холст, мазки, экспорт маски).
  */
 
-import { useBrushTool as useBrushToolImpl } from "./use-brush-tool_impl"
+import { useRef, useState, useCallback, useEffect } from "react"
 
 export type BrushMode = "lama" | "white" | "black"
 
@@ -27,6 +25,205 @@ export interface UseBrushToolReturn {
   handleBrushMouseLeave: () => void
 }
 
-export function useBrushTool(props: UseBrushToolProps): UseBrushToolReturn {
-  return useBrushToolImpl(props)
+export function useBrushTool({
+  imgRef,
+  brushSize,
+  brushMode,
+  imageSrc,
+  onBrushClean,
+}: UseBrushToolProps): UseBrushToolReturn {
+  const brushCanvasRef = useRef<HTMLCanvasElement>(null)
+  const cursorRef = useRef<HTMLDivElement>(null)
+
+  const [isBrushPainting, setIsBrushPainting] = useState<boolean>(false)
+  const [isBrushProcessing, setIsBrushProcessing] = useState<boolean>(false)
+
+  // Пока идёт мазок, ResizeObserver/resize не должны перезаписывать размер
+  // холста: это мгновенно стирает рисуемый мазок.
+  const isBrushPaintingRef = useRef(false)
+
+  const syncBrushCanvasSize = useCallback(() => {
+    const canvas = brushCanvasRef.current
+    const img = imgRef.current
+    if (!canvas || !img) return
+    if (isBrushPaintingRef.current) return
+    if (img.clientWidth > 0 && img.clientHeight > 0) {
+      if (canvas.width !== img.clientWidth || canvas.height !== img.clientHeight) {
+        canvas.width = img.clientWidth
+        canvas.height = img.clientHeight
+      }
+    }
+  }, [imgRef])
+
+  useEffect(() => {
+    syncBrushCanvasSize()
+    const img = imgRef.current
+    let observer: ResizeObserver | null = null
+
+    if (img && typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(() => {
+        syncBrushCanvasSize()
+      })
+      observer.observe(img)
+    }
+
+    window.addEventListener("resize", syncBrushCanvasSize)
+    return () => {
+      if (observer) observer.disconnect()
+      window.removeEventListener("resize", syncBrushCanvasSize)
+    }
+  }, [syncBrushCanvasSize, imageSrc, imgRef])
+
+  const getBrushStrokeStyle = useCallback(() => {
+    if (brushMode === "white") return "rgba(255, 255, 255, 0.95)"
+    if (brushMode === "black") return "rgba(0, 0, 0, 0.95)"
+    return "rgba(236, 72, 153, 0.65)"
+  }, [brushMode])
+
+  const getCanvasCoords = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = brushCanvasRef.current
+    if (!canvas) return { x: 0, y: 0 }
+    const rect = canvas.getBoundingClientRect()
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    }
+  }, [])
+
+  const handleBrushMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (isBrushProcessing || !onBrushClean) return
+      syncBrushCanvasSize()
+      const canvas = brushCanvasRef.current
+      if (!canvas) return
+      const ctx = canvas.getContext("2d")
+      if (!ctx) return
+
+      isBrushPaintingRef.current = true
+      setIsBrushPainting(true)
+      const { x, y } = getCanvasCoords(e)
+
+      if (cursorRef.current) {
+        cursorRef.current.style.display = "block"
+        cursorRef.current.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`
+      }
+
+      const color = getBrushStrokeStyle()
+      ctx.strokeStyle = color
+      ctx.fillStyle = color
+      ctx.lineWidth = brushSize
+      ctx.lineCap = "round"
+      ctx.lineJoin = "round"
+
+      ctx.beginPath()
+      ctx.arc(x, y, brushSize / 2, 0, Math.PI * 2)
+      ctx.fill()
+
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+    },
+    [isBrushProcessing, onBrushClean, syncBrushCanvasSize, getCanvasCoords, getBrushStrokeStyle, brushSize]
+  )
+
+  const handleBrushMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      const { x, y } = getCanvasCoords(e)
+
+      if (cursorRef.current) {
+        cursorRef.current.style.display = "block"
+        cursorRef.current.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`
+      }
+
+      if (isBrushPainting) {
+        const canvas = brushCanvasRef.current
+        if (!canvas) return
+        const ctx = canvas.getContext("2d")
+        if (!ctx) return
+
+        ctx.lineTo(x, y)
+        ctx.stroke()
+      }
+    },
+    [getCanvasCoords, isBrushPainting]
+  )
+
+  const handleBrushMouseUp = useCallback(async () => {
+    if (!isBrushPainting) return
+    setIsBrushPainting(false)
+
+    const screenCanvas = brushCanvasRef.current
+    const img = imgRef.current
+    if (!screenCanvas || !img || !onBrushClean) {
+      isBrushPaintingRef.current = false
+      return
+    }
+
+    setIsBrushProcessing(true)
+
+    try {
+      const offscreen = document.createElement("canvas")
+      offscreen.width = img.naturalWidth
+      offscreen.height = img.naturalHeight
+      const oCtx = offscreen.getContext("2d")
+
+      if (oCtx) {
+        oCtx.clearRect(0, 0, offscreen.width, offscreen.height)
+        const scaleX = img.naturalWidth / screenCanvas.width
+        const scaleY = img.naturalHeight / screenCanvas.height
+
+        oCtx.save()
+        oCtx.scale(scaleX, scaleY)
+        oCtx.drawImage(screenCanvas, 0, 0)
+        oCtx.restore()
+
+        const imgData = oCtx.getImageData(0, 0, offscreen.width, offscreen.height)
+        const d = imgData.data
+
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i + 3] > 15) {
+            d[i] = 255
+            d[i + 1] = 255
+            d[i + 2] = 255
+            d[i + 3] = 255
+          } else {
+            d[i] = 0
+            d[i + 1] = 0
+            d[i + 2] = 0
+            d[i + 3] = 255
+          }
+        }
+        oCtx.putImageData(imgData, 0, 0)
+
+        const maskBase64 = offscreen.toDataURL("image/png")
+        const sCtx = screenCanvas.getContext("2d")
+        sCtx?.clearRect(0, 0, screenCanvas.width, screenCanvas.height)
+
+        await onBrushClean(maskBase64, brushMode)
+      }
+    } catch (err) {
+      console.error("Ошибка применения кисти:", err)
+    } finally {
+      isBrushPaintingRef.current = false
+      setIsBrushProcessing(false)
+    }
+  }, [isBrushPainting, imgRef, onBrushClean, brushMode])
+
+  const handleBrushMouseLeave = useCallback(() => {
+    if (cursorRef.current) {
+      cursorRef.current.style.display = "none"
+    }
+    if (isBrushPainting) {
+      handleBrushMouseUp()
+    }
+  }, [isBrushPainting, handleBrushMouseUp])
+
+  return {
+    brushCanvasRef,
+    cursorRef,
+    isBrushProcessing,
+    handleBrushMouseDown,
+    handleBrushMouseMove,
+    handleBrushMouseUp,
+    handleBrushMouseLeave,
+  }
 }

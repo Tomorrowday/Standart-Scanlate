@@ -5,8 +5,32 @@
 // - плашка по возможности остаётся внутри страницы [0, 1].
 // Ручное смещение (box.japOffset) применяется поверх вычисленной базовой позиции,
 // поэтому кнопка сброса возвращает плашку именно в свободное место.
+// Расчёт: оценка габаритов, кандидаты, штрафы и выбор места.
 
 import type { TextBlock } from "@/lib/types"
+
+/** Реальный размер отрисованного скана в пикселях (для перевода габаритов в 0..1). */
+export interface JapPlateImageMetrics {
+  width: number
+  height: number
+}
+
+export type JapPlateSide = "right" | "left" | "bottom" | "top"
+
+export interface JapPlatePlacement {
+  /** Левый край плашки, нормализованный по странице (0..1). */
+  x: number
+  /** Верхний край плашки, нормализованный по странице (0..1). */
+  y: number
+  /** Оценка ширины плашки (0..1). */
+  width: number
+  /** Оценка высоты плашки (0..1). */
+  height: number
+  /** Сторона бабла, с которой стоит плашка. */
+  side: JapPlateSide
+}
+
+export type JapPlatePlacements = Record<string, JapPlatePlacement>
 
 /** Базовая оценка ширины плашки в нормализованных координатах страницы (0..1). */
 const JAP_PLATE_WIDTH = 0.22
@@ -30,33 +54,10 @@ const CHARS_PER_LINE = 11
 const MAX_ESTIMATED_LINES = 12
 const MIN_BOX_SIZE = 0.001
 
-/** Реальный размер отрисованного скана в пикселях (для перевода габаритов в 0..1). */
-export interface JapPlateImageMetrics {
-  width: number
-  height: number
-}
-
 /** Веса штрафов: перекрытие бабла/плашки и выход за границы страницы. */
 const BUBBLE_COLLISION_WEIGHT = 5000
 const PLATE_COLLISION_WEIGHT = 8000
 const OUT_OF_BOUNDS_WEIGHT = 4000
-
-export type JapPlateSide = "right" | "left" | "bottom" | "top"
-
-export interface JapPlatePlacement {
-  /** Левый край плашки, нормализованный по странице (0..1). */
-  x: number
-  /** Верхний край плашки, нормализованный по странице (0..1). */
-  y: number
-  /** Оценка ширины плашки (0..1). */
-  width: number
-  /** Оценка высоты плашки (0..1). */
-  height: number
-  /** Сторона бабла, с которой стоит плашка. */
-  side: JapPlateSide
-}
-
-export type JapPlatePlacements = Record<string, JapPlatePlacement>
 
 interface Rect {
   x: number
@@ -87,11 +88,17 @@ export function estimateJapPlateSize(
   japText: string,
   image?: JapPlateImageMetrics | null
 ): { width: number; height: number } {
-  const compact = (japText || "").replace(/\s+/g, "")
-  const lines = Math.min(
-    MAX_ESTIMATED_LINES,
-    Math.max(1, Math.ceil(compact.length / CHARS_PER_LINE))
-  )
+  const text = japText || ""
+  const compact = text.replace(/\s+/g, "")
+
+  // Явные переносы строк (\n) — это отдельные строки плашки даже при коротком
+  // тексте: их нельзя склеивать в одну, иначе плашки наложатся друг на друга.
+  const explicitLineCount = text.split(/\r?\n/).reduce((sum, line) => {
+    const compactLine = line.replace(/\s+/g, "")
+    if (!compactLine) return sum
+    return sum + Math.max(1, Math.ceil(compactLine.length / CHARS_PER_LINE))
+  }, 0)
+  const lines = Math.min(MAX_ESTIMATED_LINES, Math.max(1, explicitLineCount))
 
   if (image && image.width > 0 && image.height > 0) {
     const widthPx = compact.length <= 8 ? PLATE_WIDTH_PX * 0.75 : PLATE_WIDTH_PX

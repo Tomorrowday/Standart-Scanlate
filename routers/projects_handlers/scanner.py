@@ -16,6 +16,18 @@ EXCLUDED_DIR_NAMES = {
 }
 
 
+def _has_image_subdirs(root_folder: Path) -> bool:
+    """Проверяет, есть ли внутри root_folder подпапки с изображениями (главами)."""
+    norm_root = os.path.normpath(str(root_folder)).lower()
+    for root, dirs, files in os.walk(root_folder):
+        dirs[:] = [d for d in dirs if d.lower() not in EXCLUDED_DIR_NAMES]
+        if os.path.normpath(root).lower() == norm_root:
+            continue
+        if any(Path(f).suffix.lower() in VALID_IMAGE_EXTENSIONS for f in files):
+            return True
+    return False
+
+
 def _scan_and_insert_chapters(
     cur: sqlite3.Cursor,
     title_id: int,
@@ -35,7 +47,13 @@ def _scan_and_insert_chapters(
     direct_files = [f for f in os.listdir(root_folder) if (root_folder / f).is_file()]
     direct_images = [f for f in direct_files if Path(f).suffix.lower() in VALID_IMAGE_EXTENSIONS]
 
-    if direct_images:
+    # Если в корне лежит обложка, но есть подпапки с главами и сканируется
+    # весь тайтл (не задана конкретная глава) — не создаём главу из обложки.
+    skip_root_direct = False
+    if direct_images and not (custom_chapter_name and custom_chapter_name.strip()):
+        skip_root_direct = _has_image_subdirs(root_folder)
+
+    if direct_images and not skip_root_direct:
         norm_root = os.path.normpath(str(root_folder)).lower()
         ch_name = (
             custom_chapter_name.strip()
@@ -72,6 +90,10 @@ def _scan_and_insert_chapters(
 
     for root, _, files in walk_dirs:
         if Path(root).name.lower() in EXCLUDED_DIR_NAMES:
+            continue
+
+        if skip_root_direct and os.path.normpath(root).lower() == os.path.normpath(str(root_folder)).lower():
+            # Одиночные картинки в корне (обложка) не должны становиться главой
             continue
 
         images = [f for f in files if Path(f).suffix.lower() in VALID_IMAGE_EXTENSIONS]

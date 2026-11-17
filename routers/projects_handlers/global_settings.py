@@ -1,7 +1,7 @@
 import sqlite3
 from database import db_session, get_db
 from schemas import UpdateTitleSettingsRequest
-from config import get_available_detectors, get_available_cleaners
+from config import get_available_detectors, get_available_cleaners, get_available_ocr_models
 from ml.models import ml
 from logger import logger
 
@@ -20,6 +20,16 @@ def _ensure_global_settings_columns(cur: sqlite3.Cursor):
             cur.execute("ALTER TABLE global_settings ADD COLUMN dict_nlp_mode TEXT DEFAULT 'auto'")
         except Exception as e:
             logger.debug(f"Колонка dict_nlp_mode уже существует или ошибка добавления: {e}")
+    if "ocr_model" not in cols:
+        try:
+            cur.execute("ALTER TABLE global_settings ADD COLUMN ocr_model TEXT DEFAULT 'manga-ocr-base'")
+        except Exception as e:
+            logger.debug(f"Колонка ocr_model уже существует: {e}")
+    if "export_format" not in cols:
+        try:
+            cur.execute("ALTER TABLE global_settings ADD COLUMN export_format TEXT DEFAULT 'png'")
+        except Exception as e:
+            logger.debug(f"Колонка export_format уже существует: {e}")
 
 
 def get_global_settings_endpoint():
@@ -32,6 +42,7 @@ def get_global_settings_endpoint():
 
     settings = dict(row) if row else {
         "detector_model": "yolo_manga.pt",
+        "ocr_model": "manga-ocr-base",
         "clean_model": "anime-manga-big-lama.pt",
         "detect_conf": 0.25,
         "auto_oval_bubble": 1,
@@ -43,6 +54,7 @@ def get_global_settings_endpoint():
         "lama_downscale": 0,
         "show_sfx": 0,
         "dict_nlp_mode": "auto",
+        "export_format": "png",
     }
 
     settings["auto_oval_bubble"] = bool(settings.get("auto_oval_bubble", 1))
@@ -50,7 +62,14 @@ def get_global_settings_endpoint():
     settings["lama_downscale"] = bool(settings.get("lama_downscale", 0))
     settings["show_sfx"] = bool(row["show_sfx"]) if (row and "show_sfx" in row.keys()) else False
     settings["dict_nlp_mode"] = (row["dict_nlp_mode"] if (row and "dict_nlp_mode" in row.keys() and row["dict_nlp_mode"]) else "auto")
+    settings["ocr_model"] = (row["ocr_model"] if (row and "ocr_model" in row.keys() and row["ocr_model"]) else "manga-ocr-base")
+    settings["export_format"] = (
+        row["export_format"]
+        if (row and "export_format" in row.keys() and row["export_format"] in ("png", "webp", "avif"))
+        else "png"
+    )
     settings["available_detectors"] = get_available_detectors()
+    settings["available_ocr_models"] = get_available_ocr_models()
     settings["available_cleaners"] = get_available_cleaners()
 
     if hasattr(ml, "lama_downscale"):
@@ -70,11 +89,13 @@ def update_global_settings_endpoint(req: UpdateTitleSettingsRequest):
     current = dict(row) if row else {}
 
     detector_req = req.detector_model.strip() if req.detector_model else None
+    ocr_req = req.ocr_model.strip() if req.ocr_model else None
     cleaner_req = req.clean_model.strip() if req.clean_model else None
     if cleaner_req == "simple_lama":
         cleaner_req = "anime-manga-big-lama.pt"
 
     detector = detector_req if detector_req is not None else (current.get("detector_model") or "yolo_manga.pt")
+    ocr_model_val = ocr_req if ocr_req is not None else (current.get("ocr_model") or "manga-ocr-base")
     cleaner = cleaner_req if cleaner_req is not None else (current.get("clean_model") or "anime-manga-big-lama.pt")
     if cleaner == "simple_lama":
         cleaner = "anime-manga-big-lama.pt"
@@ -120,17 +141,28 @@ def update_global_settings_endpoint(req: UpdateTitleSettingsRequest):
     else:
         nlp_mode_val = "auto"
 
+    valid_export_formats = {"png", "webp", "avif"}
+    req_export_format = (req.export_format or "").strip().lower()
+    if req_export_format in valid_export_formats:
+        export_format_val = req_export_format
+    elif current.get("export_format") in valid_export_formats:
+        export_format_val = current["export_format"]
+    else:
+        export_format_val = "png"
+
     with db_session() as cur:
         _ensure_global_settings_columns(cur)
         cur.execute(
             """
             INSERT INTO global_settings (
-                id, detector_model, clean_model, detect_conf,
+                id, detector_model, ocr_model, clean_model, detect_conf,
                 auto_oval_bubble, default_padding, default_hyphenation,
-                font_bubble, font_thought, font_sfx, lama_downscale, show_sfx, dict_nlp_mode
-            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                font_bubble, font_thought, font_sfx, lama_downscale, show_sfx, dict_nlp_mode,
+                export_format
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 detector_model = excluded.detector_model,
+                ocr_model = excluded.ocr_model,
                 clean_model = excluded.clean_model,
                 detect_conf = excluded.detect_conf,
                 auto_oval_bubble = excluded.auto_oval_bubble,
@@ -141,9 +173,10 @@ def update_global_settings_endpoint(req: UpdateTitleSettingsRequest):
                 font_sfx = excluded.font_sfx,
                 lama_downscale = excluded.lama_downscale,
                 show_sfx = excluded.show_sfx,
-                dict_nlp_mode = excluded.dict_nlp_mode
+                dict_nlp_mode = excluded.dict_nlp_mode,
+                export_format = excluded.export_format
             """,
-            (detector, cleaner, conf, auto_oval, padding, hyph, font_b, font_t, font_s, downscale, show_sfx_val, nlp_mode_val)
+            (detector, ocr_model_val, cleaner, conf, auto_oval, padding, hyph, font_b, font_t, font_s, downscale, show_sfx_val, nlp_mode_val, export_format_val)
         )
 
         cur.execute("SELECT show_sfx FROM global_settings WHERE id = 1")
@@ -158,6 +191,7 @@ def update_global_settings_endpoint(req: UpdateTitleSettingsRequest):
         "success": True,
         "settings": {
             "detector_model": detector,
+            "ocr_model": ocr_model_val,
             "clean_model": cleaner,
             "detect_conf": conf,
             "auto_oval_bubble": bool(auto_oval),
@@ -169,6 +203,7 @@ def update_global_settings_endpoint(req: UpdateTitleSettingsRequest):
             "lama_downscale": bool(downscale),
             "show_sfx": actual_show_sfx,
             "dict_nlp_mode": nlp_mode_val,
+            "export_format": export_format_val,
         }
     }
 
@@ -179,3 +214,7 @@ def get_available_detectors_endpoint():
 
 def get_available_cleaners_endpoint():
     return {"success": True, "cleaners": get_available_cleaners()}
+
+
+def get_available_ocr_models_endpoint():
+    return {"success": True, "ocr_models": get_available_ocr_models()}

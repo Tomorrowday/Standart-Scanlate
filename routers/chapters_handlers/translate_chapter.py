@@ -77,12 +77,28 @@ def _translate_chapter_via_ollama(
 
     raw_response = gen_data.get("response", "")
     result_map: Dict[str, str] = {}
-    for line in raw_response.split("\n"):
-        match = re.match(r"^\[(\d+)\]\s*(.*)$", line.strip())
+    current_idx: int = -1
+    block_parts: Dict[int, List[str]] = {}
+    block_order: List[int] = []
+
+    for raw_line in raw_response.split("\n"):
+        line = raw_line.strip()
+        if not line or line.startswith("```"):
+            continue
+
+        match = re.match(r"^\[(\d+)\]\s*(.*)$", line)
         if match:
-            idx = int(match.group(1)) - 1
-            if 0 <= idx < len(dialogue_items):
-                result_map[dialogue_items[idx]["id"]] = sanitize_translation(match.group(2))
+            current_idx = int(match.group(1)) - 1
+            if current_idx not in block_parts:
+                block_parts[current_idx] = []
+                block_order.append(current_idx)
+            block_parts[current_idx].append(match.group(2))
+        elif current_idx >= 0:
+            block_parts[current_idx].append(line)
+
+    for idx in block_order:
+        if 0 <= idx < len(dialogue_items):
+            result_map[dialogue_items[idx]["id"]] = sanitize_translation("\n".join(block_parts[idx]))
 
     return result_map
 

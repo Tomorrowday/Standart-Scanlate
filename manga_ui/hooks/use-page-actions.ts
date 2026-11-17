@@ -12,6 +12,7 @@ export interface UsePageActionsProps {
   globalSettings: TitleSettings
   selectedId: string | null
   textBlocksRef: React.MutableRefObject<TextBlock[]>
+  saveBlocks: (refreshSpeakers?: boolean) => Promise<void>
   updateBlock: (id: string, patch: Partial<TextBlock>) => void
   setTextBlocks: React.Dispatch<React.SetStateAction<TextBlock[]>>
   setViewMode: React.Dispatch<React.SetStateAction<"original" | "clean">>
@@ -43,6 +44,7 @@ export function usePageActions({
   globalSettings,
   selectedId,
   textBlocksRef,
+  saveBlocks,
   updateBlock,
   setTextBlocks,
   setViewMode,
@@ -125,15 +127,20 @@ export function usePageActions({
 
     setIsApplyingChapterFont(true)
     try {
+      // Сохраняем текущую страницу до сброса кеглей в БД, чтобы не потерять
+      // несохранённые текстовые правки.
+      await saveBlocks()
       await resetChapterBubbleFonts(chId)
-      setTextBlocks((prev) => prev.map((b) => ({ ...b, fontSize: undefined })))
+      const next = textBlocksRef.current.map((b) => ({ ...b, fontSize: undefined }))
+      textBlocksRef.current = next
+      setTextBlocks(next)
       alert(`Все баблы главы успешно переведены в режим Auto (${titleFontSize}px)!`)
     } catch (err) {
       alert("Ошибка применения к главе: " + String(err))
     } finally {
       setIsApplyingChapterFont(false)
     }
-  }, [currentPage?.chapter_id, chapterPages, titleFontSize, setTextBlocks, setIsApplyingChapterFont])
+  }, [currentPage?.chapter_id, chapterPages, titleFontSize, saveBlocks, textBlocksRef, setTextBlocks, setIsApplyingChapterFont])
 
   const handleBrushResize = useCallback((delta: number) => {
     setBrushSize((prev) => Math.max(6, Math.min(160, prev + delta)))

@@ -1,9 +1,10 @@
 from routers.pages_handlers.common import (
     _get_clean_backup_path,
     _backup_clean_file_if_exists,
+    cleanup_other_pages_clean_backups,
     serve_image_file_safely,
 )
-from routers.pages_handlers.vram import release_vram_endpoint
+from routers.pages_handlers.vram import release_vram_endpoint, unload_all_models_endpoint
 from routers.pages_handlers.page_details import get_page_details
 from routers.pages_handlers.page_speakers import get_page_speakers
 from routers.pages_handlers.page_images import get_page_image, get_page_clean_image
@@ -21,8 +22,10 @@ from routers.pages_handlers.translated_export import save_translated_page, open_
 __all__ = [
     "_get_clean_backup_path",
     "_backup_clean_file_if_exists",
+    "cleanup_other_pages_clean_backups",
     "serve_image_file_safely",
     "release_vram_endpoint",
+    "unload_all_models_endpoint",
     "get_page_details",
     "get_page_speakers",
     "get_page_image",

@@ -1,64 +1,24 @@
 # services/detector.py
 """
-Каркас сервиса детекции речевых баблов и текста (YOLO) и определения порядка чтения манги.
-Реализация: services/detector_impl.py
-Зависимости реализации: cv2, numpy, PIL, torch, ml.models (ml), logger
+Сервис детекции речевых баблов и текста (YOLO) и определения порядка чтения манги.
+Зависимости: cv2, numpy, PIL, torch, ml.models (ml), logger
 """
 
 from typing import List, Dict, Any, Tuple, Optional
 import numpy as np
 from PIL import Image
-import services.detector_impl as _impl
+from services.detector_ops import (
+    detect_and_filter_bubbles,
+    expand_box_to_bubble,
+    find_text_core_bbox,
+    resolve_overlapping_bubbles,
+    sort_manga_reading_order,
+)
 
-
-def sort_manga_reading_order(
-    boxes: List[Dict[str, Any]],
-    gray_img: Optional[np.ndarray] = None,
-) -> List[Dict[str, Any]]:
-    """Сортирует найденные баблы страницы в порядке чтения манги (справа налево, сверху вниз)."""
-    return _impl.sort_manga_reading_order(boxes, gray_img)
-
-
-def expand_box_to_bubble(
-    gray_img: np.ndarray,
-    orig_x1: int,
-    orig_y1: int,
-    orig_x2: int,
-    orig_y2: int,
-    other_boxes: Optional[List[Tuple[int, int, int, int]]] = None
-) -> Tuple[int, int, int, int]:
-    """Адаптивно расширяет рамку текста до белых границ овала речевого бабла."""
-    return _impl.expand_box_to_bubble(gray_img, orig_x1, orig_y1, orig_x2, orig_y2, other_boxes)
-
-
-def resolve_overlapping_bubbles(
-    gray_img: np.ndarray,
-    boxes: List[Tuple[int, int, int, int, int]],
-) -> List[Tuple[int, int, int, int, int]]:
-    """Разводит перекрывающиеся (сдвоенные) баблы по белой просеке между их текстовыми ядрами."""
-    return _impl.resolve_overlapping_bubbles(gray_img, boxes)
-
-
-def find_text_core_bbox(
-    gray_roi: np.ndarray,
-    exclude_rect: Optional[Tuple[int, int, int, int]] = None,
-) -> Optional[Tuple[int, int, int, int]]:
-    """
-    Возвращает рамку текстового ядра внутри ROI бабла (без внешних стенок бабла).
-    exclude_rect — зона пересечения с соседом в локальных координатах ROI: её содержимое игнорируется.
-    """
-    return _impl.find_text_core_bbox(gray_roi, exclude_rect)
-
-
-def detect_and_filter_bubbles(
-    image: Image.Image,
-    model_name: str = "yolo_manga.pt",
-    conf_threshold: float = 0.25,
-    detect_sfx: bool = False
-) -> List[Dict[str, Any]]:
-    """
-    Выполняет детекцию речевых баблов и текста нейросетью YOLO,
-    фильтрует вложенные рамки, подтягивает контуры к овалу и сортирует в порядке чтения.
-    Если detect_sfx=False, то звуки SFX (класс 3) отбрасываются.
-    """
-    return _impl.detect_and_filter_bubbles(image, model_name, conf_threshold, detect_sfx)
+__all__ = [
+    "sort_manga_reading_order",
+    "expand_box_to_bubble",
+    "resolve_overlapping_bubbles",
+    "find_text_core_bbox",
+    "detect_and_filter_bubbles",
+]

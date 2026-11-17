@@ -13,6 +13,7 @@ export interface PageStatusUpdate {
 
 export interface UseMangaPageStateProps {
   setCurrentPage: React.Dispatch<React.SetStateAction<PageItem | null>>
+  setChapterPages: React.Dispatch<React.SetStateAction<PageItem[]>>
   setViewMode: (mode: "original" | "clean") => void
   setCleanCacheBuster: (value: number) => void
 }
@@ -26,6 +27,7 @@ export interface UseMangaPageStateReturn {
 
 export function useMangaPageState({
   setCurrentPage,
+  setChapterPages,
   setViewMode,
   setCleanCacheBuster,
 }: UseMangaPageStateProps): UseMangaPageStateReturn {
@@ -51,11 +53,24 @@ export function useMangaPageState({
         clean_path: cleanPath !== undefined ? (cleanPath || undefined) : prev.clean_path,
       }
     })
+    // Синхронизируем список страниц главы: иначе пакетные действия (например,
+    // Detect & OCR All) увидят у обработанной страницы устаревший статус "raw".
+    setChapterPages((prev) =>
+      prev.map((p) =>
+        p.id === pageId
+          ? {
+              ...p,
+              status,
+              clean_path: cleanPath !== undefined ? (cleanPath || undefined) : p.clean_path,
+            }
+          : p
+      )
+    )
     if (cleanPath !== undefined) {
       setCleanCacheBuster(Date.now())
       setViewMode(cleanPath ? "clean" : "original")
     }
-  }, [setCurrentPage, setViewMode, setCleanCacheBuster])
+  }, [setCurrentPage, setChapterPages, setViewMode, setCleanCacheBuster])
 
   return { activePageUpdate, handlePageStatusUpdate, knownSpeakers, refreshSpeakersList }
 }

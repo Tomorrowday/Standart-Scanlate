@@ -6,6 +6,7 @@ import type { TitleSettings } from "@/lib/types"
 import { getGlobalSettings, updateTitleSettings } from "@/lib/api"
 
 const DEFAULT_GLOBAL_SETTINGS: TitleSettings = {
+  ocr_model: "manga-ocr-base",
   auto_oval_bubble: true,
   default_padding: "safe",
   default_hyphenation: true,
@@ -13,6 +14,7 @@ const DEFAULT_GLOBAL_SETTINGS: TitleSettings = {
   font_thought: "v_CCFaceFront",
   font_sfx: "v_Mighty Zeo 2.0",
   show_sfx: false,
+  export_format: "png",
 }
 
 export interface UseMangaSettingsReturn {

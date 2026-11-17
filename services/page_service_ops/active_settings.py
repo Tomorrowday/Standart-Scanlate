@@ -16,6 +16,7 @@ def get_active_global_settings() -> Dict[str, Any]:
         return dict(row)
     return {
         "detector_model": "yolo_manga.pt",
+        "ocr_model": "manga-ocr-base",
         "clean_model": "anime-manga-big-lama.pt",
         "detect_conf": 0.25,
         "auto_oval_bubble": 1,
@@ -26,4 +27,5 @@ def get_active_global_settings() -> Dict[str, Any]:
         "font_sfx": "v_Mighty Zeo 2.0",
         "lama_downscale": 0,
         "show_sfx": 0,
+        "export_format": "png",
     }

@@ -6,7 +6,7 @@ from typing import Optional, List
 from fastapi import HTTPException
 from fastapi.responses import Response
 
-MAX_CLEAN_BACKUPS = 15
+MAX_CLEAN_BACKUPS = 1
 
 
 def _get_clean_backup_path(orig_path: str) -> str:
@@ -49,8 +49,28 @@ def _clear_clean_backups(orig_path: str) -> None:
             pass
 
 
+def cleanup_other_pages_clean_backups(current_orig_path: str) -> None:
+    """Удаляет все файлы *_undo_backup*.png в папке clean/, кроме текущей открытой страницы."""
+    if not current_orig_path:
+        return
+    clean_dir = os.path.join(os.path.dirname(current_orig_path), "clean")
+    if not os.path.exists(clean_dir):
+        return
+
+    current_base = os.path.splitext(os.path.basename(current_orig_path))[0]
+    keep_prefixes = (f"{current_base}_undo_backup_", f"{current_base}_undo_backup.png")
+
+    for fname in os.listdir(clean_dir):
+        if "_undo_backup" in fname and fname.endswith(".png"):
+            if not fname.startswith(keep_prefixes):
+                try:
+                    os.remove(os.path.join(clean_dir, fname))
+                except Exception:
+                    pass
+
+
 def _backup_clean_file_if_exists(orig_path: str, clean_path: Optional[str]) -> None:
-    """Сохраняет текущее состояние заклиненного скана в стек бэкапов (до MAX_CLEAN_BACKUPS шагов)."""
+    """Сохраняет текущее состояние заклиненного скана в стек бэкапов (не более MAX_CLEAN_BACKUPS = 1)."""
     if not clean_path or not os.path.exists(clean_path):
         return
 
@@ -60,7 +80,6 @@ def _backup_clean_file_if_exists(orig_path: str, clean_path: Optional[str]) -> N
     prefix = f"{base_name}_undo_backup_"
 
     existing = _list_clean_backups(orig_path)
-    # Если превышен лимит — удаляем самый старый шаг
     while len(existing) >= MAX_CLEAN_BACKUPS:
         oldest = existing.pop(0)
         try:
@@ -68,15 +87,7 @@ def _backup_clean_file_if_exists(orig_path: str, clean_path: Optional[str]) -> N
         except Exception:
             pass
 
-    next_idx = 1
-    for p in existing:
-        fname = os.path.basename(p)
-        if fname.startswith(prefix) and fname.endswith(".png"):
-            num_str = fname[len(prefix):-4]
-            if num_str.isdigit():
-                next_idx = max(next_idx, int(num_str) + 1)
-
-    target_backup = os.path.join(clean_dir, f"{prefix}{next_idx:03d}.png")
+    target_backup = os.path.join(clean_dir, f"{prefix}001.png")
     try:
         shutil.copy2(clean_path, target_backup)
     except Exception:

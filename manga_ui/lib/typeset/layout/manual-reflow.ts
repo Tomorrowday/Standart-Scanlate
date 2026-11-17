@@ -1,7 +1,12 @@
 // manga_ui/lib/typeset/layout/manual-reflow.ts
 // Сохранение ручных переносов строк, расставленных пользователем
 
-import { isCompoundHyphenPair, joinLinesRemovingSoftHyphens } from "./compound-words"
+import { joinLinesRemovingSoftHyphens } from "./compound-words"
+import {
+  collectSoftHyphenPairs,
+  normalizeCrossLineSoftHyphens,
+  normalizeSoftHyphensInLine,
+} from "./soft-hyphen-normalizer"
 
 /**
  * Невидимый маркер (Word Joiner) в конце текста означает, что пользователь
@@ -12,20 +17,6 @@ import { isCompoundHyphenPair, joinLinesRemovingSoftHyphens } from "./compound-w
  * в `<textarea>` (ни в renderedLines, ни в editableLines).
  */
 export const FORCED_SINGLE_LINE_MARKER = "\u2060"
-
-interface SoftHyphenPair {
-  left: string
-  right: string
-}
-
-interface SoftHyphenBreak {
-  pair: SoftHyphenPair
-  lastWord: string
-  leftStem: string
-  firstWord: string
-  restNext: string
-  prevLineWithoutLastWord: string
-}
 
 export interface ReflowOptions {
   /**
@@ -54,118 +45,6 @@ export function hasManualLineBreaks(text: string | null | undefined): boolean {
 /** Убирает невидимый маркер однострочности — для текста, попадающего в textarea. */
 export function stripForcedSingleLineMarker(text: string | null | undefined): string {
   return (text || "").split(FORCED_SINGLE_LINE_MARKER).join("")
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-}
-
-function parseSoftHyphenBreak(prevLineRaw: string, nextLineRaw: string): SoftHyphenBreak | null {
-  const prevLine = (prevLineRaw || "").trim()
-  const nextLine = (nextLineRaw || "").trim()
-  if (!prevLine || !nextLine) return null
-
-  const prevWords = prevLine.split(/\s+/)
-  const lastWord = prevWords[prevWords.length - 1] || ""
-  if (
-    !lastWord.endsWith("-") ||
-    lastWord.endsWith(" -") ||
-    lastWord.endsWith("—") ||
-    lastWord.endsWith("–")
-  ) {
-    return null
-  }
-
-  const leftStem = lastWord.slice(0, -1)
-  if (!leftStem) return null
-
-  const firstWord = nextLine.split(/\s+/)[0] || ""
-  if (!firstWord) return null
-
-  // isCompoundHyphenPair сам срезает окружающую пунктуацию
-  if (isCompoundHyphenPair(leftStem, firstWord)) return null
-
-  const cleanLeft = leftStem.replace(/^[«"(\[…\s]+/, "")
-  const cleanRight = firstWord
-    .replace(/^[«"(\[…\s]+/, "")
-    .replace(/[.,!?:;…»"'\)\]]+$/g, "")
-
-  if (!cleanLeft || !cleanRight) return null
-
-  return {
-    pair: { left: cleanLeft, right: cleanRight },
-    lastWord,
-    leftStem,
-    firstWord,
-    restNext: nextLine.slice(firstWord.length).trim(),
-    prevLineWithoutLastWord: prevLine.slice(0, prevLine.length - lastWord.length),
-  }
-}
-
-/**
- * Собирает пары «мягкий слоговой перенос» из уже отрисованных строк.
- * Пример: ["При-", "вет"] -> { left: "При", right: "вет" }.
- * Истинные дефисные слова ("Макима-сан", "кто-то", "точь-в-точь") пропускаются.
- */
-function collectSoftHyphenPairs(lines: string[]): SoftHyphenPair[] {
-  const pairs: SoftHyphenPair[] = []
-
-  for (let i = 0; i < lines.length - 1; i++) {
-    const info = parseSoftHyphenBreak(lines[i], lines[i + 1])
-    if (info) pairs.push(info.pair)
-  }
-
-  return pairs
-}
-
-/**
- * Склеивает обратно мягко перенесённое слово, если пользователь убрал
- * перенос строки и теперь части стоят рядом внутри одной строки:
- * "При- вет" / "При-вет" -> "Привет".
- *
- * Вторая половина слова могла быть отредактирована ("При-ветик"), поэтому
- * проверяем не точное совпадение `pair.right`, а произвольный хвост слова,
- * и склеиваем только если это не настоящее двусоставное слово.
- */
-function normalizeSoftHyphensInLine(line: string, pairs: SoftHyphenPair[]): string {
-  let result = line
-
-  for (const pair of pairs) {
-    const left = escapeRegExp(pair.left)
-    const re = new RegExp(`(^|[\\s(«"\\[…])(${left})-\\s*([а-яА-ЯёЁa-zA-Z0-9]+)`, "gi")
-    result = result.replace(re, (match, prefix: string, tailLeft: string, tailRight: string) => {
-      if (isCompoundHyphenPair(tailLeft, tailRight)) return match
-      return `${prefix}${tailLeft}${tailRight}`
-    })
-  }
-
-  return result
-}
-
-/**
- * Убирает «висячий» мягкий дефис в конце строки, если вторая половина слова
- * больше не начинается со следующей строки. Пример: было ["При-", "вет"],
- * пользователь оставил "При-" в конце строки, но следующая строка теперь
- * начинается с другого слова — дефис от старой вёрстки снимается.
- */
-function normalizeCrossLineSoftHyphens(lines: string[], pairs: SoftHyphenPair[]): string[] {
-  const result = [...lines]
-
-  for (const pair of pairs) {
-    const leftRe = new RegExp(`(^|[\\s(«"\\[…])${escapeRegExp(pair.left)}-$`, "i")
-    const rightRe = new RegExp(`^[\\s(«"\\[…]*${escapeRegExp(pair.right)}`, "i")
-
-    for (let i = 0; i < result.length; i++) {
-      if (!leftRe.test(result[i])) continue
-
-      const nextLine = result[i + 1] || ""
-      if (nextLine && rightRe.test(nextLine)) continue
-
-      result[i] = result[i].replace(/-$/, "")
-    }
-  }
-
-  return result
 }
 
 /**

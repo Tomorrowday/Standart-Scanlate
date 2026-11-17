@@ -8,7 +8,9 @@ opencv-python==4.11.0.86
 numpy==1.26.4
 ultralytics==8.4.140
 manga-ocr==0.1.16
-transformers==4.46.3
+transformers==4.57.1
+sentencepiece==0.2.0
+protobuf==5.29.6
 safetensors==0.8.0
 
 # Локальный японско-русский словарь и морфологический анализ (Подэтап 2.1)

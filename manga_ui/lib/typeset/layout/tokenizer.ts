@@ -89,9 +89,15 @@ export function cleanAndTrimLines(rawLines: string[]): string[] {
   return result
 }
 
-export function tokenizeMangaPhrase(text: string): string[] {
+export interface TokenizedPhrase {
+  tokens: string[]
+  /** true для i-го токена означает: следующий токен — продолжение слова, пробел не ставится. */
+  joinWithoutSpaceAfter: boolean[]
+}
+
+export function tokenizeMangaPhrase(text: string): TokenizedPhrase {
   const rawTokens = text.trim().split(/\s+/).filter(Boolean)
-  if (rawTokens.length === 0) return []
+  if (rawTokens.length === 0) return { tokens: [], joinWithoutSpaceAfter: [] }
 
   // Шаг 1: Приклеиваем только закрывающие тире/частицы ("ли", "же", "бы", "б") к предыдущему слову
   const step1: string[] = []
@@ -121,43 +127,68 @@ export function tokenizeMangaPhrase(text: string): string[] {
   // по дефису без уменьшения кегля. Разбиение идёт по ВСЕМ внутренним дефисам.
   // ПРИМЕЧАНИЕ: Предлоги («из», «в», «на») НЕ свариваются намертво со следующим словом,
   // что позволяет свободно переносить их по строкам
-  const step2: string[] = []
+  const tokens: string[] = []
+  const joinWithoutSpaceAfter: boolean[] = []
   for (const token of step1) {
     const hyphenParts = splitHyphenatedToken(token)
     if (hyphenParts) {
-      step2.push(...hyphenParts)
+      for (let i = 0; i < hyphenParts.length; i++) {
+        tokens.push(hyphenParts[i])
+        // Все части, кроме последней, — продолжение одного слова без пробела.
+        joinWithoutSpaceAfter.push(i < hyphenParts.length - 1)
+      }
     } else {
-      step2.push(token)
+      tokens.push(token)
+      joinWithoutSpaceAfter.push(false)
     }
   }
 
-  return step2
+  return { tokens, joinWithoutSpaceAfter }
 }
 
 export function expandOversizedTokens(
   ctx: CanvasRenderingContext2D,
   tokens: string[],
   maxLineWidth: number,
-  minHyphens: boolean
-): { units: string[]; isSoftHyphen: boolean[]; hadHyphenation: boolean; hadForcedCharSplit: boolean } {
+  minHyphens: boolean,
+  joinFlags?: boolean[]
+): {
+  units: string[]
+  isSoftHyphen: boolean[]
+  joinWithoutSpaceAfter: boolean[]
+  hadHyphenation: boolean
+  hadForcedCharSplit: boolean
+} {
   const units: string[] = []
   const isSoftHyphen: boolean[] = []
+  const joinWithoutSpaceAfter: boolean[] = []
   let hadHyphenation = false
   let hadForcedCharSplit = false
 
-  const queue = [...tokens]
+  // Очередь единиц: флаг joinAfter означает «следующая единица без пробела».
+  const queue: { text: string; joinAfter: boolean }[] = tokens.map((text, i) => ({
+    text,
+    joinAfter: Boolean(joinFlags?.[i]),
+  }))
 
   while (queue.length > 0) {
-    const token = queue.shift()!
+    const { text: token, joinAfter } = queue.shift()!
     if (ctx.measureText(token).width <= maxLineWidth) {
       units.push(token)
       isSoftHyphen.push(false)
+      joinWithoutSpaceAfter.push(joinAfter)
       continue
     }
 
     if (token.includes(" ")) {
       const subParts = token.split(/\s+/)
-      queue.unshift(...subParts)
+      queue.unshift(
+        ...subParts.map((text, i) => ({
+          text,
+          // Продолжение исходного слова без пробела — только у последней части.
+          joinAfter: i === subParts.length - 1 ? joinAfter : false,
+        }))
+      )
       continue
     }
 
@@ -169,7 +200,12 @@ export function expandOversizedTokens(
         if (ctx.measureText(sp.prefix).width <= maxLineWidth) {
           units.push(sp.prefix)
           isSoftHyphen.push(!sp.isNativeHyphen)
-          queue.unshift(cleanLeadingPunct(sp.suffix))
+          // Родной дефис — без пробела; мягкий/принудительный перенос — с пробелом.
+          joinWithoutSpaceAfter.push(Boolean(sp.isNativeHyphen))
+          queue.unshift({
+            text: cleanLeadingPunct(sp.suffix),
+            joinAfter,
+          })
           if (!sp.isNativeHyphen) hadHyphenation = true
           splitDone = true
           break
@@ -197,12 +233,17 @@ export function expandOversizedTokens(
     if (splitIdx !== -1) {
       units.push(appendHyphenSafe(part).trim())
       isSoftHyphen.push(true)
-      queue.unshift(cleanLeadingPunct(token.slice(splitIdx)))
+      joinWithoutSpaceAfter.push(false)
+      queue.unshift({
+        text: cleanLeadingPunct(token.slice(splitIdx)),
+        joinAfter,
+      })
     } else {
       units.push(token)
       isSoftHyphen.push(false)
+      joinWithoutSpaceAfter.push(joinAfter)
     }
   }
 
-  return { units, isSoftHyphen, hadHyphenation, hadForcedCharSplit }
+  return { units, isSoftHyphen, joinWithoutSpaceAfter, hadHyphenation, hadForcedCharSplit }
 }

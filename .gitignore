@@ -63,3 +63,4 @@ docs/
 
 # временный кэш-файл компилятора TypeScript
 *.tsbuildinfo
+/test_data/

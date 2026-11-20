@@ -68,6 +68,10 @@ CLEAN_MODELS_DIR.mkdir(parents=True, exist_ok=True)
 OCR_MODELS_DIR = WEIGHTS_DIR / "ocr"
 OCR_MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Папка TorchScript-моделей маски текста (U-Net, weights/brush)
+BRUSH_MODELS_DIR = WEIGHTS_DIR / "brush"
+BRUSH_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
 YOLO_WEIGHTS_PATH = WEIGHTS_DIR / "yolo_manga.pt"
 if not YOLO_WEIGHTS_PATH.exists() and (BASE_DIR / "yolo_manga.pt").exists():
     YOLO_WEIGHTS_PATH = BASE_DIR / "yolo_manga.pt"
@@ -141,9 +145,26 @@ def get_available_ocr_models() -> Dict[str, str]:
     return ocr_models
 
 
+def get_available_brush_models() -> Dict[str, str]:
+    """Сканирует weights/brush/*.pt и добавляет псевдо-модель 'opencv' (эвристика без нейросети)."""
+    models: Dict[str, str] = {"opencv": "OpenCV (эвристика, без нейросети)"}
+    brush_files = sorted(list(BRUSH_MODELS_DIR.glob("*.pt")), key=lambda p: p.name.lower())
+    for f in brush_files:
+        models[f.name] = f.name
+    return models
+
+
 # Настройки клина
 LAMA_FORCE_GRAYSCALE = os.getenv("LAMA_FORCE_GRAYSCALE", "false").lower() in ("true", "1", "yes")
 MAX_LAMA_DIM = int(os.getenv("MAX_LAMA_DIM", "2048"))
+
+# Локальная Ollama: адрес можно переопределить в .env (LAN/другой порт).
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+# U-Net-маска текста (weights/brush): должно совпадать с imgsz обучения модели
+DEFAULT_BRUSH_MAX_SIDE = 512
+DEFAULT_BRUSH_THRESHOLD = 0.5
+BRUSH_SIZE_MULTIPLE = 32
 
 
 def natural_sort_key(s: str) -> List[object]:

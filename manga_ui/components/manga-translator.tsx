@@ -14,11 +14,11 @@
  *
  */
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import type { PageItem } from "@/lib/types"
 import { ImageViewer } from "@/components/image-viewer"
 import { Sidebar } from "@/components/sidebar"
-import { BatchChapterActions } from "@/components/batch-chapter-actions"
+import { BatchChapterActions, type BatchAction } from "@/components/batch-chapter-actions"
 import { TranslatorHeader } from "@/components/translator-header"
 import { TranslationToolbar } from "@/components/translation-toolbar"
 import { TextBlocksList } from "@/components/text-blocks-list"
@@ -29,13 +29,14 @@ import { openTranslatedFolder, getPageImageUrl, getPageCleanImageUrl, unloadAllM
 import { useMangaHotkeys } from "@/hooks/use-manga-hotkeys"
 import { usePageBlocks } from "@/hooks/use-page-blocks"
 import { usePagePipelines } from "@/hooks/use-page-pipelines"
-import { useChapterTimer } from "@/hooks/use-chapter-timer"
 import { usePanelResize } from "@/hooks/use-panel-resize"
 import { usePageNavigation } from "@/hooks/use-page-navigation"
 import { useMangaSettings } from "@/hooks/use-manga-settings"
 import { useMangaPageState } from "@/hooks/use-manga-page-state"
 import { usePageActions } from "@/hooks/use-page-actions"
 import { useBatchChapterActions } from "@/hooks/use-batch-chapter-actions"
+import { useUiLayerOpen } from "@/lib/ui-layer-store"
+import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 
 export interface MangaTranslatorProps {}
 
@@ -78,13 +79,22 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
 
   const currentChapterId = currentPage?.chapter_id || chapterPages[0]?.chapter_id || null
 
-  const { isTimerRunning, timerSeconds, handleStartTimer, handleStopTimer } = useChapterTimer(currentChapterId)
   const { panelWidth, isResizing, startResizing } = usePanelResize()
   const settings = useMangaSettings()
-  const pageState = useMangaPageState({ setCurrentPage, setChapterPages, setViewMode, setCleanCacheBuster })
+  const pageState = useMangaPageState({
+    setCurrentPage,
+    setChapterPages,
+    setViewMode,
+    setCleanCacheBuster,
+    currentPageId: currentPage?.id ?? null,
+  })
 
-  // Глобальные настройки с базовым кеглем текущего тайтла
-  const globalSettings = { ...settings.globalSettings, default_font_size: settings.titleFontSize }
+  // Глобальные настройки с базовым кеглем текущего тайтла. useMemo сохраняет
+  // ссылочную стабильность, иначе React.memo карточек не работает.
+  const globalSettings = useMemo(
+    () => ({ ...settings.globalSettings, default_font_size: settings.titleFontSize }),
+    [settings.globalSettings, settings.titleFontSize]
+  )
 
   const blocks = usePageBlocks(
     currentPage,
@@ -92,6 +102,12 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
     pageState.handlePageStatusUpdate,
     pageState.refreshSpeakersList
   )
+
+  useUnsavedGuard({
+    isDirtyRef: blocks.isDirtyRef,
+    currentPageRef: blocks.currentPageRef,
+    textBlocksRef: blocks.textBlocksRef,
+  })
 
   const pipelines = usePagePipelines({
     currentPage,
@@ -102,6 +118,12 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
     globalSettings,
     setSelectedId: blocks.setSelectedId,
     saveBlocks: blocks.saveBlocks,
+    saveBlocksExplicit: blocks.saveBlocksExplicit,
+    markDirty: blocks.markDirty,
+    isCurrentPage: blocks.isCurrentPage,
+    applyBlocksForPage: blocks.applyBlocksForPage,
+    recordCleanAction: blocks.recordCleanAction,
+    discardLastSnapshot: blocks.discardLastSnapshot,
     onPageStatusUpdate: pageState.handlePageStatusUpdate,
     setShowTypeset,
     setViewMode,
@@ -137,6 +159,7 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
     selectedId: blocks.selectedId,
     textBlocksRef: blocks.textBlocksRef,
     saveBlocks: blocks.saveBlocks,
+    isCurrentPage: blocks.isCurrentPage,
     updateBlock: blocks.updateBlock,
     setTextBlocks: blocks.setTextBlocks,
     setViewMode,
@@ -151,12 +174,43 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
   })
 
   const handleChapterDeleted = useCallback((deletedChapterId: number) => {
-    if (currentPage?.chapter_id === deletedChapterId) {
+    // Глава может быть активной и без открытой страницы (chapterPages[0]).
+    const activeChapterId = currentPage?.chapter_id ?? chapterPages[0]?.chapter_id
+    if (activeChapterId === deletedChapterId) {
       blocks.clearBlocks()
       setCurrentPage(null)
       setChapterPages([])
     }
-  }, [currentPage?.chapter_id, blocks.clearBlocks])
+  }, [currentPage?.chapter_id, chapterPages, blocks.clearBlocks])
+
+  const handleTitleDeleted = useCallback((deletedTitleId: number) => {
+    // Открытая страница и выбранный в сайдбаре тайтл могут относиться
+    // к разным тайтлам — очищаем их независимо.
+    if (currentPage?.title_id === deletedTitleId) {
+      blocks.clearBlocks()
+      setCurrentPage(null)
+      setChapterPages([])
+    }
+    if (settings.currentTitleId === deletedTitleId) {
+      settings.setCurrentTitleId(null)
+    }
+  }, [
+    currentPage?.title_id,
+    settings.currentTitleId,
+    settings.setCurrentTitleId,
+    blocks.clearBlocks,
+  ])
+
+  // Стабильные обработчики перемещения: inline-стрелки в пропсах отключали
+  // React.memo у каждой карточки бабла.
+  const handleMoveBlockUp = useCallback(
+    (id: string) => blocks.moveBlock(id, "up"),
+    [blocks.moveBlock]
+  )
+  const handleMoveBlockDown = useCallback(
+    (id: string) => blocks.moveBlock(id, "down"),
+    [blocks.moveBlock]
+  )
 
   // Пакетные действия главы подняты в родителя: одни и те же обработчики
   // используются панелью <BatchChapterActions /> и глобальными хоткеями (Alt+D/C/E/J/I).
@@ -167,14 +221,24 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
     onSaveCurrentPage: () => blocks.saveBlocks(true),
     onPageStatusUpdate: pageState.handlePageStatusUpdate,
     onCompleteBatch: () => setSidebarRefreshTrigger((prev) => prev + 1),
-    onRefreshCurrent: () => {
-      if (currentPage) navigation.handleSelectPage(currentPage, true)
+    onRefreshCurrent: (action?: BatchAction) => {
+      // Clean / Export / Script-Export не меняют text_blocks в БД — перезагружать
+      // текущую страницу и сбрасывать правки не нужно (clean_path уже обновлён).
+      if (action === "clean" || action === "export" || action === "script-export") return
+      const activePage = blocks.currentPageRef.current
+      if (!activePage) return
+      // Не затираем несохранённые правки пользователя на открытой странице.
+      if (blocks.isDirtyRef.current) return
+      void navigation.handleSelectPage(activePage, true)
     },
   }
 
   const batchActions = useBatchChapterActions(batchChapterProps)
 
+  const uiLayerOpen = useUiLayerOpen()
+
   useMangaHotkeys({
+    disabled: uiLayerOpen,
     selectedId: blocks.selectedId,
     textBlocks: blocks.textBlocks,
     defaultFontSize: settings.titleFontSize,
@@ -191,6 +255,7 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
     onDeleteBlock: blocks.deleteBlock,
     onMoveBlock: blocks.moveBlock,
     onUpdateBlock: blocks.updateBlock,
+    onCleanPage: () => void pipelines.handleCleanPage("auto"),
     onSpotClean: blocks.spotCleanBlock,
     onBrushResize: actions.handleBrushResize,
     onChapterDetectAll: batchActions.detectAll,
@@ -229,10 +294,6 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
         isSaving={blocks.isSaving}
         isExporting={pipelines.isExporting}
         isExportSuccess={pipelines.isExportSuccess}
-        isTimerRunning={isTimerRunning}
-        timerSeconds={timerSeconds}
-        onStartTimer={handleStartTimer}
-        onStopTimer={handleStopTimer}
         isUnloadingModels={isUnloadingModels}
         unloadMessage={unloadMessage}
         onUnloadModels={handleUnloadModels}
@@ -256,6 +317,7 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
           onSelectPage={(page, pages) => navigation.handleSelectPage(page, false, pages)}
           onChapterDeleted={handleChapterDeleted}
           onTitleSelected={settings.handleTitleSelected}
+          onTitleDeleted={handleTitleDeleted}
         />
 
         <ImageViewer
@@ -276,6 +338,9 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
           onSelect={blocks.setSelectedId}
           onDrawComplete={blocks.addOrUpdateDrawnBlock}
           onUpdateBlock={blocks.updateBlock}
+          onUpdateBlockTransient={blocks.updateBlockTransient}
+          getHistoryDepth={blocks.getHistoryDepth}
+          onTruncateHistory={blocks.truncateHistory}
           onBrushClean={actions.handleBrushClean}
         />
 
@@ -330,8 +395,8 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
             onSelect={blocks.setSelectedId}
             onUpdate={blocks.updateBlock}
             onDelete={blocks.deleteBlock}
-            onMoveUp={(id) => blocks.moveBlock(id, "up")}
-            onMoveDown={(id) => blocks.moveBlock(id, "down")}
+            onMoveUp={handleMoveBlockUp}
+            onMoveDown={handleMoveBlockDown}
             onSpotClean={blocks.spotCleanBlock}
           />
         </section>

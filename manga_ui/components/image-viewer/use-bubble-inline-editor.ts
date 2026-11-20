@@ -10,6 +10,7 @@ import type { TextBlock } from "@/lib/types"
 import {
   reflowFromManualLines,
   hasManualLineBreaks,
+  hasModifiedLineBreaks,
   stripForcedSingleLineMarker,
   FORCED_SINGLE_LINE_MARKER,
 } from "@/lib/typeset"
@@ -30,6 +31,11 @@ export interface UseBubbleInlineEditorParams {
     options?: ReflowOptions
   ) => BubbleReflowedState
   onUpdate?: (id: string, patch: Partial<TextBlock>) => void
+  /** Транзиентное обновление без нового шага Undo (для отката по Escape). */
+  onUpdateTransient?: (id: string, patch: Partial<TextBlock>) => void
+  /** Глубина стека Undo и её обрезка для отмены правки без «мусорных» шагов. */
+  getHistoryDepth?: () => number
+  onTruncateHistory?: (depth: number) => void
   onClose: () => void
 }
 
@@ -42,6 +48,9 @@ export function useBubbleInlineEditor({
   autoOvalBubble = true,
   computeReflowedState,
   onUpdate,
+  onUpdateTransient,
+  getHistoryDepth,
+  onTruncateHistory,
   onClose,
 }: UseBubbleInlineEditorParams) {
   const [localText, setLocalText] = useState(() =>
@@ -54,12 +63,17 @@ export function useBubbleInlineEditor({
   const editableLinesRef = useRef<string[]>(editableLines)
   const lastEmittedStorageRef = useRef<string | null>(null)
   const originalStorageRef = useRef<string>(box.rusText || "")
+  const originalShapeRef = useRef<TextBlock["shape"]>(box.shape)
+  const historyDepthAtOpenRef = useRef<number>(getHistoryDepth?.() ?? 0)
   const isCancellingRef = useRef(false)
   const hasCommittedRef = useRef(false)
   // Был ли блок ручным до правки и менял ли пользователь разбивку строк.
   const wasManualBeforeEditRef = useRef(hasManualLineBreaks(box.rusText))
   const hadForcedSingleLineRef = useRef(Boolean(box.rusText?.includes(FORCED_SINGLE_LINE_MARKER)))
   const userTouchedBreaksRef = useRef(false)
+  // Число строк на предыдущем onChange и факт Enter/Backspace по переносам.
+  const prevLineCountRef = useRef(editableLines.length)
+  const hadBreakEditRef = useRef(false)
   // Был ли русский текст пустым при открытии редактора: только в этом случае
   // авто-режим превращает бабл речи в овал после ввода перевода.
   const wasEmptyBeforeEditRef = useRef(!box.rusText?.trim())
@@ -85,6 +99,8 @@ export function useBubbleInlineEditor({
     wasManualBeforeEditRef.current = hasManualLineBreaks(box.rusText)
     hadForcedSingleLineRef.current = Boolean(box.rusText?.includes(FORCED_SINGLE_LINE_MARKER))
     userTouchedBreaksRef.current = false
+    hadBreakEditRef.current = false
+    prevLineCountRef.current = lines.length
   }, [box.rusText])
 
   const reflowOptions = (): ReflowOptions => ({
@@ -105,9 +121,18 @@ export function useBubbleInlineEditor({
     const nextText = e.target.value
     setLocalText(nextText)
 
-    if (nextText.split(/\r?\n/).length !== snapshotLinesOnOpenRef.current.length) {
-      userTouchedBreaksRef.current = true
-    }
+    // Вычисляем на каждом изменении, а не «залипаем» в true после первого Enter:
+    // Backspace должен возвращать блок в авто-режим. Сравниваем распределение
+    // слов по строкам — перенос слова между строками тоже ручная разбивка.
+    const nextLineCount = nextText.split(/\r?\n/).length
+    userTouchedBreaksRef.current = hasModifiedLineBreaks(
+      snapshotLinesOnOpenRef.current,
+      nextText,
+      prevLineCountRef.current,
+      hadBreakEditRef.current
+    )
+    if (nextLineCount !== prevLineCountRef.current) hadBreakEditRef.current = true
+    prevLineCountRef.current = nextLineCount
 
     if (!onUpdate) return
 
@@ -173,10 +198,6 @@ export function useBubbleInlineEditor({
       return
     }
 
-    if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
-      userTouchedBreaksRef.current = true
-    }
-
     if (e.key === "Escape") {
       e.preventDefault()
       isCancellingRef.current = true
@@ -185,16 +206,23 @@ export function useBubbleInlineEditor({
           ? editableLines.join("\n")
           : stripForcedSingleLineMarker(box.rusText)
       )
-      if (onUpdate && box.rusText !== originalStorageRef.current) {
-        onUpdate(box.id, {
+
+      // Откатываем текст и форму (авто-овал) без создания нового шага Undo,
+      // затем убираем снапшоты, созданные во время этой правки.
+      const applyPatch = onUpdateTransient ?? onUpdate
+      if (applyPatch) {
+        const patch: Partial<TextBlock> = {
           rusText: originalStorageRef.current,
+          shape: originalShapeRef.current,
           status: originalStorageRef.current.trim()
             ? "translated"
             : box.japText
               ? "ocr-done"
               : "new",
-        })
+        }
+        applyPatch(box.id, patch)
       }
+      onTruncateHistory?.(historyDepthAtOpenRef.current)
       onClose()
       return
     }

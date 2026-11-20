@@ -27,3 +27,19 @@ def translate_text(req: TranslationRequest):
 def translate_batch(req: BatchTranslationRequest):
     """Пакетный перевод реплик страницы с подгрузкой синопсиса и глоссария тайтла."""
     return _h.translate_batch_endpoint(req)
+
+
+@router.get("/ollama/status")
+def ollama_status():
+    """Статус локальной Ollama (модели, выбранная чат-модель) для UI."""
+    from services.translator_ops.ollama import list_ollama_models, pick_chat_model
+
+    try:
+        models = list_ollama_models()
+        return {
+            "ok": True,
+            "models": models,
+            "selected_model": pick_chat_model(models) if models else None,
+        }
+    except Exception as e:
+        return {"ok": False, "models": [], "selected_model": None, "error": str(e)}

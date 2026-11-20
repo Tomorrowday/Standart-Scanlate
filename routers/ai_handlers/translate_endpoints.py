@@ -1,38 +1,35 @@
 # routers/ai_handlers/translate_endpoints.py
-# Одиночный и пакетный перевод реплик через Gemini или локальную Ollama
+# Одиночный и пакетный перевод реплик через локальную Ollama
 
 from typing import Any, Dict, List
 
+from fastapi import HTTPException
+
 from database import get_db
 from schemas import TranslationRequest, BatchTranslationRequest
-from ml.models import ml
-from services.translator import translate_single_text, translate_batch_items
-from routers.chapters_handlers.translate_chapter import _translate_chapter_via_ollama
+from services.translator_ops.ollama import translate_via_ollama as _translate_chapter_via_ollama
 
 
 def translate_text_endpoint(req: TranslationRequest):
-    """Одиночный перевод реплики через Gemini или локальную Ollama."""
+    """Одиночный перевод реплики через локальную Ollama."""
     text = (req.text or "").strip()
     if not text:
         return {"success": True, "translated": ""}
 
     try:
-        if ml.gemini_model:
-            translated = translate_single_text(text, req.title_description or "")
-        else:
-            glossary_rows = [
-                {"jap_word": k, "rus_word": v, "context": ""}
-                for k, v in (req.glossary or {}).items()
-            ]
-            res_map = _translate_chapter_via_ollama(
-                [{"id": "single", "text": text, "speaker": "", "class_id": 0}],
-                title_description=req.title_description or req.context or "",
-                glossary_rows=glossary_rows,
-            )
-            translated = res_map.get("single", "")
+        glossary_rows = [
+            {"jap_word": k, "rus_word": v, "context": ""}
+            for k, v in (req.glossary or {}).items()
+        ]
+        res_map = _translate_chapter_via_ollama(
+            [{"id": "single", "text": text, "speaker": "", "class_id": 0}],
+            title_description=req.title_description or req.context or "",
+            glossary_rows=glossary_rows,
+        )
+        translated = res_map.get("single", "")
         return {"success": True, "translated": translated}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 def translate_batch_endpoint(req: BatchTranslationRequest):
@@ -67,26 +64,23 @@ def translate_batch_endpoint(req: BatchTranslationRequest):
                 glossary_rows = [dict(r) for r in cur.fetchall()]
 
     try:
-        if ml.gemini_model:
-            translations = translate_batch_items(req.items, title_desc, glossary_rows)
-        else:
-            dialogue_items = [
-                {
-                    "id": it.id,
-                    "text": it.text,
-                    "speaker": it.speaker or "",
-                    "class_id": it.class_id or 0,
-                }
-                for it in req.items
-            ]
-            translations = _translate_chapter_via_ollama(
-                dialogue_items,
-                title_description=title_desc,
-                glossary_rows=glossary_rows,
-            )
+        dialogue_items = [
+            {
+                "id": it.id,
+                "text": it.text,
+                "speaker": it.speaker or "",
+                "class_id": it.class_id or 0,
+            }
+            for it in req.items
+        ]
+        translations = _translate_chapter_via_ollama(
+            dialogue_items,
+            title_description=title_desc,
+            glossary_rows=glossary_rows,
+        )
         return {"success": True, "translations": translations}
     except Exception as e:
-        return {"success": False, "error": str(e), "translations": {}}
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 # Алиасы на случай внешних вызовов старых имён

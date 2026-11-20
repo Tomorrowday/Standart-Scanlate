@@ -9,8 +9,8 @@ import type React from "react"
 import { useRef, useState, useCallback, useEffect, useMemo } from "react"
 import { FolderOpen, Loader2 } from "lucide-react"
 import type { TextBlock } from "@/lib/types"
-import { setPageImageMetrics } from "@/lib/typeset"
-import { releaseVram } from "@/lib/api/pages"
+import { setPageImageMetrics, usePageImageMetrics } from "@/lib/typeset"
+import { releaseVram, type BrushMaskRect } from "@/lib/api/pages"
 import { useHotkeysConfig } from "@/hooks/use-manga-hotkeys"
 import { useBoxTransform, type DrawRect } from "@/hooks/use-box-transform"
 import { useBrushTool, type BrushMode } from "@/hooks/use-brush-tool"
@@ -38,7 +38,14 @@ export interface ImageViewerProps {
   onSelect: (id: string | null) => void
   onDrawComplete: (rect: DrawRect, img: HTMLImageElement, existingId?: string, rotation?: number) => void
   onUpdateBlock?: (id: string, patch: Partial<TextBlock>) => void
-  onBrushClean?: (maskBase64: string, mode: BrushMode) => Promise<void>
+  onUpdateBlockTransient?: (id: string, patch: Partial<TextBlock>) => void
+  getHistoryDepth?: () => number
+  onTruncateHistory?: (depth: number) => void
+  onBrushClean?: (
+    maskBase64: string,
+    mode: BrushMode,
+    maskRect?: BrushMaskRect
+  ) => Promise<void>
 }
 
 function normalize(a: number, b: number) {
@@ -63,9 +70,19 @@ export function ImageViewer({
   onSelect,
   onDrawComplete,
   onUpdateBlock,
+  onUpdateBlockTransient,
+  getHistoryDepth,
+  onTruncateHistory,
   onBrushClean,
 }: ImageViewerProps) {
-  const imgRef = useRef<HTMLImageElement>(null)
+  const imgRef = useRef<HTMLImageElement | null>(null)
+  // DOM-узел картинки как state: на первом рендере ref ещё null, а дочерним
+  // компонентам он нужен сразу для расчёта вёрстки.
+  const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null)
+  const setImgRef = useCallback((el: HTMLImageElement | null) => {
+    imgRef.current = el
+    setImgEl(el)
+  }, [])
   const { hotkeys } = useHotkeysConfig()
 
   const [activeTool, setActiveTool] = useState<"box" | "brush">("box")
@@ -73,33 +90,34 @@ export function ImageViewer({
 
   const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null)
   const [draft, setDraft] = useState<DrawRect | null>(null)
-  const [imageMetrics, setImageMetrics] = useState<{ width: number; height: number } | null>(null)
 
-  // Реальный размер отрисованного скана нужен для корректной оценки габаритов JP-плашек
-  const measureImage = useCallback(() => {
-    const img = imgRef.current
-    if (!img || !img.clientWidth || !img.clientHeight) return
-    setImageMetrics((prev) =>
-      prev && prev.width === img.clientWidth && prev.height === img.clientHeight
-        ? prev
-        : { width: img.clientWidth, height: img.clientHeight }
-    )
-  }, [])
-
+  // Единственный ResizeObserver на <img>: публикует natural + отображаемый
+  // размер в общий стор, из которого читают все баблы и JP-плашки.
   useEffect(() => {
-    measureImage()
-    window.addEventListener("resize", measureImage)
-    return () => window.removeEventListener("resize", measureImage)
-  }, [imageSrc, measureImage])
+    const img = imgEl
+    if (!img) return
 
-  // Скан мог загрузиться из кэша ещё до монтирования (или до смены imageSrc):
-  // публикуем его naturalWidth / naturalHeight для верстки в карточках.
-  useEffect(() => {
-    const img = imgRef.current
-    if (img?.complete && img.naturalWidth > 0) {
-      setPageImageMetrics(img.naturalWidth, img.naturalHeight)
+    const publish = () => {
+      if (!img.naturalWidth || !img.clientWidth || !img.clientHeight) return
+      setPageImageMetrics(
+        img.naturalWidth,
+        img.naturalHeight,
+        img.clientWidth,
+        img.clientHeight
+      )
     }
-  }, [imageSrc])
+
+    publish()
+    const observer = new ResizeObserver(publish)
+    observer.observe(img)
+    window.addEventListener("resize", publish)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener("resize", publish)
+    }
+  }, [imgEl, imageSrc])
+
+  const pageMetrics = usePageImageMetrics()
 
   const prevToolRef = useRef(activeTool)
   useEffect(() => {
@@ -109,13 +127,17 @@ export function ImageViewer({
     prevToolRef.current = activeTool
   }, [activeTool])
 
+  // Один unmount-cleanup: при смене инструмента VRAM освобождает эффект выше,
+  // иначе releaseVram() вызывался дважды (на смене и в cleanup).
+  const activeToolRef = useRef(activeTool)
+  activeToolRef.current = activeTool
   useEffect(() => {
     return () => {
-      if (activeTool === "brush") {
+      if (activeToolRef.current === "brush") {
         releaseVram()
       }
     }
-  }, [activeTool])
+  }, [])
 
   const pointFromEvent = useCallback((e: React.MouseEvent | MouseEvent) => {
     const img = imgRef.current
@@ -162,6 +184,8 @@ export function ImageViewer({
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (activeTool === "brush") return
+    // Правый/средний клик не должен начинать рисовать рамку.
+    if (e.button !== 0) return
     if (!imageSrc || isEditing) return
     const p = pointFromEvent(e)
     if (!p) return
@@ -170,34 +194,68 @@ export function ImageViewer({
     setDraft({ x: p.x, y: p.y, width: 0, height: 0, rotation: 0 })
   }
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (activeTool === "brush" || !origin) return
-    const p = pointFromEvent(e)
-    if (!p) return
-    const hx = normalize(origin.x, p.x)
-    const hy = normalize(origin.y, p.y)
-    setDraft({ x: hx.start, y: hy.start, width: hx.size, height: hy.size, rotation: 0 })
-  }
+  // Свежий черновик для обработчиков window: не пересоздаём подписки на каждый mousemove.
+  const draftRef = useRef<DrawRect | null>(null)
+  draftRef.current = draft
 
-  const finishDraw = () => {
+  const finishDraw = useCallback(() => {
     if (activeTool === "brush") return
-    if (draft && imgRef.current && draft.width > 0.01 && draft.height > 0.01) {
-      onDrawComplete(draft, imgRef.current, undefined, 0)
+    const currentDraft = draftRef.current
+    // Гасим черновик сразу: mouseup приходит и в React-обработчик, и в window —
+    // повторный вызов не должен создать второй бабл.
+    draftRef.current = null
+    if (currentDraft && imgRef.current && currentDraft.width > 0.01 && currentDraft.height > 0.01) {
+      onDrawComplete(currentDraft, imgRef.current, undefined, 0)
     }
     setOrigin(null)
     setDraft(null)
-  }
+  }, [activeTool, onDrawComplete])
+
+  // Рисование рамки продолжается, даже если курсор вышел за пределы картинки:
+  // завершаем только по mouseup в любом месте окна.
+  useEffect(() => {
+    if (!origin || activeTool === "brush") return
+
+    const handleWindowMove = (e: MouseEvent) => {
+      const p = pointFromEvent(e)
+      if (!p) return
+      const hx = normalize(origin.x, p.x)
+      const hy = normalize(origin.y, p.y)
+      setDraft({ x: hx.start, y: hy.start, width: hx.size, height: hy.size, rotation: 0 })
+    }
+
+    window.addEventListener("mousemove", handleWindowMove)
+    window.addEventListener("mouseup", finishDraw)
+    return () => {
+      window.removeEventListener("mousemove", handleWindowMove)
+      window.removeEventListener("mouseup", finishDraw)
+    }
+  }, [origin, activeTool, pointFromEvent, finishDraw])
 
   const visibleBoxes = useMemo(() => {
     return draft ? [...textBlocks, { id: "__draft__", ...draft } as TextBlock] : textBlocks
   }, [textBlocks, draft])
 
+  // Стабильный ключ только от геометрии и japText: правка перевода/стиля не
+  // должна пересчитывать тысячи пересечений плашек.
+  const japPlacementKey = useMemo(
+    () =>
+      textBlocks
+        .map((b) => `${b.id}|${b.x}|${b.y}|${b.width}|${b.height}|${b.japText ?? ""}`)
+        .join("\n"),
+    [textBlocks]
+  )
+
   // Централизованный расчёт свободных позиций всех JP-плашек страницы:
   // без перекрытий с баблами и между самими плашками.
   const japPlatePlacements = useMemo(() => {
     if (!showJapOverlay) return {}
-    return computeJapPlatePlacements(textBlocks, imageMetrics)
-  }, [textBlocks, showJapOverlay, imageMetrics])
+    return computeJapPlatePlacements(textBlocks, {
+      width: pageMetrics.clientW,
+      height: pageMetrics.clientH,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [japPlacementKey, showJapOverlay, pageMetrics.clientW, pageMetrics.clientH])
 
   return (
     <section className="flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden">
@@ -229,21 +287,23 @@ export function ImageViewer({
           <div
             className="relative inline-block w-full select-none"
             onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
             onMouseUp={finishDraw}
-            onMouseLeave={finishDraw}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              ref={imgRef}
+              ref={setImgRef}
               crossOrigin="anonymous"
               src={imageSrc}
               alt="Manga page"
               draggable={false}
               onLoad={(e) => {
                 const el = e.currentTarget
-                setPageImageMetrics(el.naturalWidth, el.naturalHeight)
-                measureImage()
+                setPageImageMetrics(
+                  el.naturalWidth,
+                  el.naturalHeight,
+                  el.clientWidth,
+                  el.clientHeight
+                )
               }}
               className="block w-full rounded-lg border border-slate-800"
             />
@@ -284,7 +344,11 @@ export function ImageViewer({
             )}
 
             {activeTool === "box" &&
-              visibleBoxes.map((box, index) => (
+              visibleBoxes.map((box, index) => {
+                // Транзиентные drag/rotate-данные передаём только текущему баблу:
+                // иначе перетаскивание одного ререндерит остальные 25 на 60 fps.
+                const isCurrentEdit = isEditing && editId === box.id
+                return (
                 <BubbleOverlayItem
                   key={box.id}
                   box={box}
@@ -294,18 +358,22 @@ export function ImageViewer({
                   showTypeset={showTypeset}
                   showJapOverlay={showJapOverlay}
                   autoJapPlacement={japPlatePlacements[box.id] ?? null}
-                  imgElement={imgRef.current}
-                  isEditingCurrent={isEditing && editId === box.id}
-                  editType={editType}
-                  activeBox={activeBox}
-                  activeRotation={activeRotation}
+                  imgElement={imgEl}
+                  isEditingCurrent={isCurrentEdit}
+                  editType={isCurrentEdit ? editType : null}
+                  activeBox={isCurrentEdit ? activeBox : null}
+                  activeRotation={isCurrentEdit ? activeRotation : 0}
                   defaultFontSize={defaultFontSize}
                   autoOvalBubble={autoOvalBubble}
                   onStartTransform={startTransform}
                   onSelect={onSelect}
                   onUpdate={onUpdateBlock}
+                  onUpdateTransient={onUpdateBlockTransient}
+                  getHistoryDepth={getHistoryDepth}
+                  onTruncateHistory={onTruncateHistory}
                 />
-              ))}
+                )
+              })}
           </div>
         )}
       </div>

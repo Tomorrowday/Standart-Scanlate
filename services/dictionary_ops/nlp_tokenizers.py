@@ -86,10 +86,14 @@ class NlpTokenizersMixin:
             if nlp is not None:
                 return self._tokenize_with_spacy_ginza(nlp, segment)
 
-        if nlp_mode == "auto" and self._spacy_nlp_map:
-            # Если модель GiNZA уже загружена в память — используем её в режиме Auto
-            first_loaded = next(iter(self._spacy_nlp_map.values()))
-            return self._tokenize_with_spacy_ginza(first_loaded, segment)
+        if nlp_mode == "auto":
+            # Если модель GiNZA уже загружена в память — используем её в режиме Auto.
+            # Читаем карту под локом: unload_models() мог её очистить между проверкой
+            # и обращением. Локальная ссылка держит объект живым до конца разбора.
+            with self._nlp_lock:
+                first_loaded = next(iter(self._spacy_nlp_map.values()), None)
+            if first_loaded is not None:
+                return self._tokenize_with_spacy_ginza(first_loaded, segment)
 
         if self._init_sudachi():
             return self._tokenize_with_sudachi(segment)

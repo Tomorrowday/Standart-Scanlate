@@ -120,8 +120,10 @@ export async function bakePageBlob(
   ctx.drawImage(img, 0, 0)
 
   for (const box of blocks) {
-    const rawText = (box.rusText || "").trim()
-    if (!rawText) continue
+    // Не обрезаем хвостовой \n: движок вёрстки должен видеть тот же текст,
+    // что и Preview (bubble-display-lines.ts), иначе переносы разойдутся.
+    const rawText = box.rusText || ""
+    if (!rawText.trim()) continue
 
     const displayText = box.isUppercase ? rawText.toUpperCase() : rawText
     const bx = box.x * canvas.width

@@ -76,9 +76,14 @@ export interface TitleSettings {
   show_sfx?: boolean
   dict_nlp_mode?: "auto" | "sudachi" | "electra" | "bert_large"
   export_format?: ExportFormat
+  brush_model?: string
+  brush_threshold?: number
+  brush_extra_dilate?: number
+  brush_max_side?: number
   available_detectors?: Record<string, string>
   available_ocr_models?: Record<string, string>
   available_cleaners?: Record<string, string>
+  available_brush_models?: Record<string, string>
 }
 
 export interface TitleProject extends TitleSettings {

@@ -39,16 +39,26 @@ def save_translated_page(page_id: int, file: UploadFile):
     file_name = os.path.splitext(os.path.basename(orig_path))[0]
     final_path = os.path.join(translated_dir, f"{file_name}.{export_format}")
 
+    # Пишем во временный файл рядом и атомарно подменяем: параллельное чтение
+    # не увидит недописанный PNG, а сбой записи не уничтожит прошлую версию.
+    tmp_path = f"{final_path}.tmp"
     try:
         if export_format == "png":
             # Фронтенд присылает PNG-блоб из Canvas — сохраняем байт-в-байт
-            with open(final_path, "wb") as buffer:
+            with open(tmp_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
         else:
             with Image.open(file.file) as img:
-                img.convert("RGB").save(final_path, **EXPORT_SAVE_OPTIONS[export_format])
+                img.convert("RGB").save(tmp_path, **EXPORT_SAVE_OPTIONS[export_format])
+        os.replace(tmp_path, final_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Не удалось сохранить файл: {e}")
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
     # Удаляем старые версии этой же страницы в других форматах,
     # чтобы в translated/ не дублировались страницы (например, 01.png и 01.webp).

@@ -7,11 +7,19 @@ from routers.pages_handlers.common import (
     _backup_clean_file_if_exists,
     _list_clean_backups,
     _clear_clean_backups,
+    page_clean_lock,
 )
 from services.page_service import clean_page_bubbles_service, revert_page_clean_service
 
 
 def clean_page_bubbles(page_id: int, mode: str = "auto"):
+    # Сериализуем операции клина одной страницы: чтение файла -> клин -> запись.
+    # Порядок блокировок: page_clean_lock -> ml.lock (его берут модели внутри).
+    with page_clean_lock(page_id):
+        return _clean_page_bubbles_locked(page_id, mode)
+
+
+def _clean_page_bubbles_locked(page_id: int, mode: str = "auto"):
     try:
         with get_db() as conn:
             cur = conn.cursor()
@@ -21,6 +29,15 @@ def clean_page_bubbles(page_id: int, mode: str = "auto"):
                 _backup_clean_file_if_exists(str(row["file_path"]), row["clean_path"])
 
         clean_path, new_status, stats = clean_page_bubbles_service(page_id, clean_mode=mode)
+        if stats.get("skipped"):
+            return {
+                "success": True,
+                "skipped": True,
+                "clean_path": clean_path,
+                "page_status": new_status,
+                "whitened": 0,
+                "inpainted": 0,
+            }
         return {
             "success": True,
             "clean_path": clean_path,
@@ -29,12 +46,17 @@ def clean_page_bubbles(page_id: int, mode: str = "auto"):
             "inpainted": stats["inpaint"]
         }
     except ValueError as e:
-        return {"success": False, "error": str(e)}
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 def revert_page_clean(page_id: int):
+    with page_clean_lock(page_id):
+        return _revert_page_clean_locked(page_id)
+
+
+def _revert_page_clean_locked(page_id: int):
     try:
         with get_db() as conn:
             cur = conn.cursor()
@@ -53,6 +75,11 @@ def revert_page_clean(page_id: int):
 
 def undo_last_clean_step(page_id: int):
     """Откатывает последний шаг клина из стека резервных копий без удаления всего клина страницы."""
+    with page_clean_lock(page_id):
+        return _undo_last_clean_step_locked(page_id)
+
+
+def _undo_last_clean_step_locked(page_id: int):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT file_path, clean_path, status FROM pages WHERE id = ?", (page_id,))

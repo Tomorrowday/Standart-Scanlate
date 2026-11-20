@@ -3,9 +3,20 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 
+class BrushMaskRect(BaseModel):
+    """Положение кропа маски кисти в пикселях оригинального изображения."""
+    x: int
+    y: int
+    width: int
+    height: int
+
+
 class BrushCleanRequest(BaseModel):
-    mask_base64: str  # PNG-маска в data:image/png;base64,... или сырой base64
+    mask_base64: str  # PNG-маска (кроп) в data:image/png;base64,... или сырой base64
     mode: Optional[str] = "lama"  # "lama" | "white" | "black"
+    # Если задано — mask_base64 содержит только кроп мазка, который нужно
+    # вставить в полноразмерную маску по этим координатам.
+    mask_rect: Optional[BrushMaskRect] = None
 
 
 class SpotCleanRequest(BaseModel):
@@ -16,6 +27,7 @@ class SpotCleanRequest(BaseModel):
     rotation: Optional[float] = 0.0
     shape: Optional[str] = "rect"
     method: Optional[str] = "auto"  # "auto" | "lama" | "white"
+    class_id: Optional[int] = 0  # 0: Bubble, 1: Thought, 2: Text/SFX
 
 
 class TextBlockItem(BaseModel):

@@ -19,6 +19,7 @@ import {
 } from "@/lib/api"
 import { GlossaryTab } from "@/components/project-modal/glossary-tab"
 import { SynopsisTab } from "@/components/project-modal/synopsis-tab"
+import { openUiLayer } from "@/lib/ui-layer-store"
 
 export interface ProjectModalProps {
   titleId: number
@@ -36,6 +37,10 @@ export function ProjectModal({
   onSettingsUpdated,
 }: ProjectModalProps) {
   const [mounted, setMounted] = useState(false)
+
+  // Пока модалка открыта, глобальные хоткеи страницы не должны срабатывать.
+  useEffect(() => openUiLayer(), [])
+
   const [activeTab, setActiveTab] = useState<"glossary" | "synopsis">(initialTab)
 
   const [description, setDescription] = useState("")
@@ -69,6 +74,8 @@ export function ProjectModal({
       if (data && data.description !== undefined) {
         setDescription(data.description || "")
       }
+    } catch (e) {
+      console.warn("Не удалось загрузить настройки тайтла (возможно, он удалён):", e)
     } finally {
       setLoadingDesc(false)
     }

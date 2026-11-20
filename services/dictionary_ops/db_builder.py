@@ -17,6 +17,8 @@ from services.dictionary_ops.jp_dict_db import (
     ensure_jp_dict_schema,
     get_dict_db_connection,
     get_dictionary_status,
+    is_dictionary_building,
+    bump_dict_version,
 )
 from services.dictionary_ops.starter_data import (
     DICT_DOWNLOAD_URLS,
@@ -37,8 +39,25 @@ __all__ = [
     "extract_plain_senses",
     "import_yomitan_zip",
     "get_dictionary_status",
+    "is_dictionary_building",
     "download_and_build_dictionaries",
 ]
+
+
+# Раздельные таймауты: без сети падаем быстро (10 c), а не висим две минуты
+# с is_building=True и отключённым кэшем словаря.
+DICT_CONNECT_TIMEOUT_SEC = 10.0
+DICT_READ_TIMEOUT_SEC = 120.0
+
+
+def _set_read_timeout(resp, timeout: float) -> None:
+    """Меняет read-таймаут у сокета уже открытого HTTP-ответа."""
+    sock = getattr(getattr(getattr(resp, "fp", None), "raw", None), "_sock", None)
+    if sock is not None:
+        try:
+            sock.settimeout(timeout)
+        except OSError:
+            pass
 
 
 def _download_dictionary_zip(url: str, zip_path: Path) -> None:
@@ -52,7 +71,8 @@ def _download_dictionary_zip(url: str, zip_path: Path) -> None:
         headers={"User-Agent": "MangaTranslator/2.0 (Local Offline Dictionary Builder)"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=120.0) as resp, open(tmp_path, "wb") as out_f:
+        with urllib.request.urlopen(req, timeout=DICT_CONNECT_TIMEOUT_SEC) as resp, open(tmp_path, "wb") as out_f:
+            _set_read_timeout(resp, DICT_READ_TIMEOUT_SEC)
             while True:
                 chunk = resp.read(256 * 1024)
                 if not chunk:
@@ -144,5 +164,9 @@ def download_and_build_dictionaries(
             "status": get_dictionary_status(),
         }
     finally:
+        # При частичном импорте (1 словарь обновился, 2-й упал) кэш read-only
+        # соединений всё равно обязан сброситься — иначе UI видит старый снапшот.
+        if imported_stats:
+            bump_dict_version()
         _build_progress["is_building"] = False
         _build_lock.release()

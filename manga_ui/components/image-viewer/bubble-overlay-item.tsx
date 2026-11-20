@@ -40,6 +40,9 @@ export interface BubbleOverlayItemProps {
   onStartTransform: (e: React.MouseEvent, box: TextBlock, action: EditAction) => void
   onSelect: (id: string) => void
   onUpdate?: (id: string, patch: Partial<TextBlock>) => void
+  onUpdateTransient?: (id: string, patch: Partial<TextBlock>) => void
+  getHistoryDepth?: () => number
+  onTruncateHistory?: (depth: number) => void
 }
 
 export const BubbleOverlayItem = memo(function BubbleOverlayItem({
@@ -60,6 +63,9 @@ export const BubbleOverlayItem = memo(function BubbleOverlayItem({
   onStartTransform,
   onSelect,
   onUpdate,
+  onUpdateTransient,
+  getHistoryDepth,
+  onTruncateHistory,
 }: BubbleOverlayItemProps) {
   const isDraft = box.id === "__draft__"
   const hasTranslation = Boolean(box.rusText && box.rusText.trim())
@@ -86,6 +92,7 @@ export const BubbleOverlayItem = memo(function BubbleOverlayItem({
   } = useBubbleScreenLayout({ imgElement, box, currentW, currentH, defaultFontSize })
 
   const handleMouseDown = (e: React.MouseEvent, action: EditAction) => {
+    if (e.button !== 0) return
     if (isInlineEditing) return
     e.stopPropagation()
     onSelect(box.id)
@@ -126,6 +133,7 @@ export const BubbleOverlayItem = memo(function BubbleOverlayItem({
       currentH={currentH}
       onSelect={onSelect}
       onUpdate={onUpdate}
+      onUpdateTransient={onUpdateTransient}
     />
   )
 
@@ -159,6 +167,9 @@ export const BubbleOverlayItem = memo(function BubbleOverlayItem({
         autoOvalBubble={autoOvalBubble}
         computeReflowedState={computeReflowedState}
         onUpdate={onUpdate}
+        onUpdateTransient={onUpdateTransient}
+        getHistoryDepth={getHistoryDepth}
+        onTruncateHistory={onTruncateHistory}
         onClose={() => setIsInlineEditing(false)}
       />
     )

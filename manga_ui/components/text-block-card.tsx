@@ -6,7 +6,7 @@
  */
 
 import type { TextBlock } from "@/lib/types"
-import { useState, useRef, useEffect, memo } from "react"
+import { useState, useRef, useEffect, useCallback, memo } from "react"
 import { WrapText, Languages, Pencil } from "lucide-react"
 import {
   analyzeBubbleJapText,
@@ -30,14 +30,18 @@ export interface TextBlockCardProps {
   fontThought?: string
   fontSfx?: string
   isSelected: boolean
-  onSelect: () => void
-  onChange: (patch: Partial<TextBlock>) => void
-  onDelete: () => void
-  onMoveUp: () => void
-  onMoveDown: () => void
+  onSelect: (id: string) => void
+  onChange: (id: string, patch: Partial<TextBlock>) => void
+  onDelete: (id: string) => void
+  onMoveUp: (id: string) => void
+  onMoveDown: (id: string) => void
   canMoveUp: boolean
   canMoveDown: boolean
-  onSpotClean?: (method: "auto" | "lama" | "white", deleteAfter?: boolean) => Promise<void>
+  onSpotClean?: (
+    block: TextBlock,
+    method: "auto" | "lama" | "white",
+    deleteAfter?: boolean
+  ) => Promise<void>
 }
 
 export const TextBlockCard = memo(function TextBlockCard({
@@ -67,6 +71,23 @@ export const TextBlockCard = memo(function TextBlockCard({
   const [tokens, setTokens] = useState<TokenSpan[] | null>(null)
   const [glossaryTick, setGlossaryTick] = useState(0)
 
+  // Стабильные обёртки с id внутри карточки: родитель передаёт неизменные
+  // колбэки, поэтому React.memo не ломается.
+  const blockId = block.id
+  const handleSelect = useCallback(() => onSelect(blockId), [onSelect, blockId])
+  const handleChange = useCallback(
+    (patch: Partial<TextBlock>) => onChange(blockId, patch),
+    [onChange, blockId]
+  )
+  const handleDelete = useCallback(() => onDelete(blockId), [onDelete, blockId])
+  const handleMoveUp = useCallback(() => onMoveUp(blockId), [onMoveUp, blockId])
+  const handleMoveDown = useCallback(() => onMoveDown(blockId), [onMoveDown, blockId])
+  const handleSpotClean = useCallback(
+    (method: "auto" | "lama" | "white", deleteAfter?: boolean) =>
+      onSpotClean ? onSpotClean(block, method, deleteAfter) : Promise.resolve(),
+    [onSpotClean, block]
+  )
+
   const isDictActive = (showJapOverlay || localDictMode) && !isEditingJapField && Boolean(block.japText?.trim())
 
   const {
@@ -82,7 +103,7 @@ export const TextBlockCard = memo(function TextBlockCard({
     handleClearManualBreaks,
     hasManualNewlines,
     rusRows,
-  } = useCardRusEditor({ block, defaultFontSize, autoOvalBubble, onChange })
+  } = useCardRusEditor({ block, defaultFontSize, autoOvalBubble, onChange: handleChange })
 
   useEffect(() => {
     if (isSelected && cardRef.current) {
@@ -99,6 +120,8 @@ export const TextBlockCard = memo(function TextBlockCard({
   useEffect(() => {
     const raw = (block.japText || "").trim()
     if (!isDictActive || !raw) {
+      // Сбрасываем старые токены/подсветку при очистке japText или выключении словаря.
+      setTokens(null)
       return
     }
     let cancelled = false
@@ -113,7 +136,7 @@ export const TextBlockCard = memo(function TextBlockCard({
   return (
     <article
       ref={cardRef}
-      onClick={onSelect}
+      onClick={handleSelect}
       className={[
         "cursor-pointer rounded-lg border bg-slate-800/60 p-2.5 transition-colors",
         isSelected ? "border-amber-400/80 ring-1 ring-amber-400/40" : "border-slate-700/80 hover:border-slate-600",
@@ -127,13 +150,13 @@ export const TextBlockCard = memo(function TextBlockCard({
         fontBubble={fontBubble}
         fontThought={fontThought}
         fontSfx={fontSfx}
-        onChange={onChange}
-        onDelete={onDelete}
-        onMoveUp={onMoveUp}
-        onMoveDown={onMoveDown}
+        onChange={handleChange}
+        onDelete={handleDelete}
+        onMoveUp={handleMoveUp}
+        onMoveDown={handleMoveDown}
         canMoveUp={canMoveUp}
         canMoveDown={canMoveDown}
-        onSpotClean={onSpotClean}
+        onSpotClean={handleSpotClean}
       />
 
       <div className="mt-2 space-y-1.5">
@@ -186,13 +209,22 @@ export const TextBlockCard = memo(function TextBlockCard({
                 tokens={tokens}
                 titleId={titleId}
                 onStartEdit={() => setIsEditingJapField(true)}
-                onSetSpeaker={(speakerName) => onChange({ speaker: speakerName })}
+                onSetSpeaker={(speakerName) => handleChange({ speaker: speakerName })}
               />
             </div>
           ) : (
             <textarea
               value={block.japText}
-              onChange={(e) => onChange({ japText: e.target.value })}
+              onChange={(e) => {
+                const japText = e.target.value
+                // Правка японского текста меняет стадию блока: перевод важнее OCR.
+                const status = block.rusText?.trim()
+                  ? "translated"
+                  : japText.trim()
+                    ? "ocr-done"
+                    : "new"
+                handleChange({ japText, status })
+              }}
               onBlur={() => setIsEditingJapField(false)}
               onClick={(e) => e.stopPropagation()}
               placeholder="Японский текст…"
@@ -241,7 +273,7 @@ export const TextBlockCard = memo(function TextBlockCard({
         </div>
       </div>
 
-      <BubbleStyleControls block={block} defaultFontSize={defaultFontSize} onChange={onChange} />
+      <BubbleStyleControls block={block} defaultFontSize={defaultFontSize} onChange={handleChange} />
     </article>
   )
 })

@@ -7,7 +7,7 @@
 
 import { useState, useRef, useCallback } from "react"
 import type { TextBlock, PageItem, PageStatus, TitleSettings } from "@/lib/types"
-import { savePageBlocks } from "@/lib/api"
+import { savePageBlocks, toPageBlocksPayload } from "@/lib/api"
 import { useBlocksHistory } from "./use-blocks-history"
 import {
   addOrUpdateDrawnBlockOp,
@@ -27,21 +27,28 @@ export interface UsePageBlocksReturn {
   textBlocks: TextBlock[]
   setTextBlocks: React.Dispatch<React.SetStateAction<TextBlock[]>>
   textBlocksRef: React.MutableRefObject<TextBlock[]>
+  currentPageRef: React.MutableRefObject<PageItem | null>
   selectedId: string | null
   setSelectedId: (id: string | null) => void
   isSaving: boolean
   isDirtyRef: React.MutableRefObject<boolean>
+  markDirty: () => void
+  isCurrentPage: (pageId: number) => boolean
+  applyBlocksForPage: (pageId: number, next: TextBlock[]) => void
   canUndo: boolean
   canRedo: boolean
   undo: () => Promise<void>
   redo: () => void
   recordCleanAction: () => void
   discardLastSnapshot: () => void
+  getHistoryDepth: () => number
+  truncateHistory: (depth: number) => void
   saveBlocks: (refreshSpeakers?: boolean) => Promise<void>
   saveBlocksExplicit: (targetPageId: number, blocksToSave: TextBlock[], refreshSpeakers?: boolean) => Promise<void>
   setNewPageBlocks: (newBlocks: TextBlock[]) => void
   clearBlocks: () => void
   updateBlock: (id: string, patch: Partial<TextBlock>) => void
+  updateBlockTransient: (id: string, patch: Partial<TextBlock>) => void
   deleteBlock: (id: string) => void
   moveBlock: (id: string, direction: "up" | "down") => void
   spotCleanBlock: (block: TextBlock, method?: "auto" | "lama" | "white", deleteAfter?: boolean) => Promise<void>
@@ -71,6 +78,34 @@ export function usePageBlocks(
   currentPageRef.current = currentPage
 
   const isDirtyRef = useRef(false)
+  // Счётчик ревизий правок: позволяет не сбрасывать флаг «грязно», если
+  // пользователь продолжил печатать, пока шёл HTTP-запрос сохранения.
+  const dirtyVersionRef = useRef(0)
+
+  const markDirty = useCallback(() => {
+    dirtyVersionRef.current += 1
+    isDirtyRef.current = true
+  }, [])
+
+  // Фоновый авто-OCR меняет japText, но это не «правка пользователя»:
+  // помечаем страницу грязной без инкремента ревизии, чтобы сохранение,
+  // дождавшееся OCR, корректно сбрасывало isDirtyRef.
+  const markOcrDirty = useCallback(() => {
+    isDirtyRef.current = true
+  }, [])
+
+  // Стабильные помощники для пайплайнов с долгими await: обновлять UI
+  // разрешено только для той страницы, которая всё ещё открыта.
+  const isCurrentPage = useCallback(
+    (pageId: number) => currentPageRef.current?.id === pageId,
+    []
+  )
+
+  const applyBlocksForPage = useCallback((pageId: number, next: TextBlock[]) => {
+    if (currentPageRef.current?.id !== pageId) return
+    setTextBlocks(next)
+    textBlocksRef.current = next
+  }, [])
 
   // Авто-OCR новых баблов выполняется асинхронно и обновляет блок, которого
   // ещё нет в БД. Держим промисы, чтобы сохранение дождалось распознанного
@@ -90,18 +125,21 @@ export function usePageBlocks(
     redo,
     resetHistory,
     discardLastSnapshot,
+    getHistoryDepth,
+    truncateHistory,
   } = useBlocksHistory({
     textBlocksRef,
     selectedIdRef,
     currentPageRef,
     setTextBlocks,
     setSelectedId,
-    isDirtyRef,
+    markDirty,
     onPageStatusUpdate,
   })
 
   const saveBlocksExplicit = useCallback(
     async (targetPageId: number, blocksToSave: TextBlock[], refreshSpeakers = true) => {
+      const savedVersion = dirtyVersionRef.current
       setIsSaving(true)
       try {
         // Дожидаемся незавершённого авто-OCR: иначе новый блок сохранится в БД
@@ -120,30 +158,7 @@ export function usePageBlocks(
           return { ...b, japText: latest.japText, status: latest.status }
         })
 
-        const payload = blocksWithOcr.map((b) => ({
-          id: b.id,
-          class_id: b.class_id ?? 0,
-          x: b.x,
-          y: b.y,
-          width: b.width,
-          height: b.height,
-          rotation: b.rotation || 0,
-          jap_text: b.japText,
-          rus_text: b.rusText,
-          speaker: b.speaker || "",
-          order_index: b.orderIndex || 0,
-          font_size: b.fontSize !== undefined && b.fontSize !== null ? Number(b.fontSize) : undefined,
-          font_family: b.fontFamily || "v_CCFaceFront",
-          is_bold: Boolean(b.isBold),
-          is_italic: Boolean(b.isItalic),
-          is_uppercase: Boolean(b.isUppercase),
-          has_stroke: Boolean(b.hasStroke),
-          text_color: b.textColor || "black",
-          shape: b.shape || "rect",
-          padding_mode: b.paddingMode || "safe",
-          min_hyphens: b.minHyphens !== undefined ? Boolean(b.minHyphens) : true,
-          status: b.status,
-        }))
+        const payload = toPageBlocksPayload(blocksWithOcr)
 
         const res = await savePageBlocks(targetPageId, payload)
         if (res.page_status) {
@@ -154,7 +169,11 @@ export function usePageBlocks(
           onRefreshSpeakers(targetPageId)
         }
 
-        isDirtyRef.current = false
+        // Сбрасываем флаг только если сохраняемая страница всё ещё открыта
+        // и за время запроса не появилось новых правок.
+        if (currentPageRef.current?.id === targetPageId && dirtyVersionRef.current === savedVersion) {
+          isDirtyRef.current = false
+        }
       } catch (e) {
         console.error("Ошибка сохранения блоков страницы", targetPageId, e)
         throw e
@@ -182,6 +201,7 @@ export function usePageBlocks(
       setTextBlocks(sanitized)
       textBlocksRef.current = sanitized
       isDirtyRef.current = false
+      dirtyVersionRef.current = 0
       lastTextUndoRef.current = null
       resetHistory()
     },
@@ -194,12 +214,16 @@ export function usePageBlocks(
     setSelectedId(null)
     selectedIdRef.current = null
     isDirtyRef.current = false
+    dirtyVersionRef.current = 0
     lastTextUndoRef.current = null
     resetHistory()
   }, [resetHistory])
 
   const updateBlock = useCallback(
     (id: string, patch: Partial<TextBlock>) => {
+      // Ранний выход: «чужой» ответ пайплайна не должен создавать Undo-шаг.
+      if (!textBlocksRef.current.some((b) => b.id === id)) return
+
       const patchKeys = Object.keys(patch)
       const isTextOnlyPatch =
         patchKeys.length > 0 && patchKeys.every((key) => TEXT_PATCH_KEYS.has(key))
@@ -219,7 +243,7 @@ export function usePageBlocks(
         lastTextUndoRef.current = isTextOnlyPatch ? { blockId: id, time: now } : null
       }
 
-      isDirtyRef.current = true
+      markDirty()
       setTextBlocks((prev) => {
         const next = prev.map((b) => {
           if (b.id !== id) return b
@@ -233,14 +257,36 @@ export function usePageBlocks(
         return next
       })
     },
-    [pushUndoSnapshot]
+    [pushUndoSnapshot, markDirty]
+  )
+
+  // Транзиентное обновление UI-состояния (например, japOffset): без Undo-шага
+  // и без пометки страницы грязной — смещение намеренно не сохраняется в БД.
+  const updateBlockTransient = useCallback(
+    (id: string, patch: Partial<TextBlock>) => {
+      if (!textBlocksRef.current.some((b) => b.id === id)) return
+      setTextBlocks((prev) => {
+        const next = prev.map((b) => {
+          if (b.id !== id) return b
+          const updated = { ...b, ...patch }
+          if (patch.fontSize === null) {
+            updated.fontSize = undefined
+          }
+          return updated
+        })
+        textBlocksRef.current = next
+        return next
+      })
+    },
+    []
   )
 
   const deleteBlock = useCallback(
     (id: string) => {
+      if (!textBlocksRef.current.some((b) => b.id === id)) return
       pushUndoSnapshot(false)
       lastTextUndoRef.current = null
-      isDirtyRef.current = true
+      markDirty()
       setTextBlocks((prev) => {
         const idx = prev.findIndex((b) => b.id === id)
         const filtered = prev.filter((b) => b.id !== id)
@@ -262,7 +308,7 @@ export function usePageBlocks(
         return updated
       })
     },
-    [pushUndoSnapshot]
+    [pushUndoSnapshot, markDirty]
   )
 
   const moveBlock = useCallback(
@@ -275,7 +321,7 @@ export function usePageBlocks(
 
       pushUndoSnapshot(false)
       lastTextUndoRef.current = null
-      isDirtyRef.current = true
+      markDirty()
       setTextBlocks((prev) => {
         const i = prev.findIndex((b) => b.id === id)
         if (i < 0) return prev
@@ -288,7 +334,7 @@ export function usePageBlocks(
         return reindexed
       })
     },
-    [pushUndoSnapshot]
+    [pushUndoSnapshot, markDirty]
   )
 
   // Актуальный контекст для операций клина/рисования: функции ниже остаются
@@ -298,13 +344,15 @@ export function usePageBlocks(
     currentPageRef,
     textBlocksRef,
     selectedIdRef,
-    isDirtyRef,
+    markDirty,
+    markOcrDirty,
     lastTextUndoRef,
     pendingOcrPromisesRef,
     setTextBlocks,
     setSelectedId,
     pushUndoSnapshot,
     discardLastSnapshot,
+    isCurrentPage,
     onPageStatusUpdate,
     globalSettings,
   }
@@ -325,6 +373,16 @@ export function usePageBlocks(
     []
   )
 
+  // Обрезка истории (Escape в инлайн-редакторе) тоже ломает склейку ввода:
+  // следующий символ обязан создать новый шаг Undo.
+  const handleTruncateHistory = useCallback(
+    (depth: number) => {
+      truncateHistory(depth)
+      lastTextUndoRef.current = null
+    },
+    [truncateHistory]
+  )
+
   // После Undo/Redo следующий текстовый ввод обязан создать новый снапшот.
   const handleUndo = useCallback(async () => {
     lastTextUndoRef.current = null
@@ -340,21 +398,28 @@ export function usePageBlocks(
     textBlocks,
     setTextBlocks,
     textBlocksRef,
+    currentPageRef,
     selectedId,
     setSelectedId,
     isSaving,
     isDirtyRef,
+    markDirty,
+    isCurrentPage,
+    applyBlocksForPage,
     canUndo,
     canRedo,
     undo: handleUndo,
     redo: handleRedo,
     recordCleanAction,
     discardLastSnapshot,
+    getHistoryDepth,
+    truncateHistory: handleTruncateHistory,
     saveBlocks,
     saveBlocksExplicit,
     setNewPageBlocks,
     clearBlocks,
     updateBlock,
+    updateBlockTransient,
     deleteBlock,
     moveBlock,
     spotCleanBlock,

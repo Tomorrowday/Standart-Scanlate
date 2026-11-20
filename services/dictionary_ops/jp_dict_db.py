@@ -2,11 +2,12 @@
 # Подключение к data/jp_dict.sqlite, схема, стартовое заполнение и статус базы словаря
 
 import json
+import os
 import sqlite3
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Any, Iterator
+from typing import Dict, Any, Iterator, Tuple
 
 from config import JP_DICT_DB_PATH, DICT_SOURCES_DIR
 from logger import logger
@@ -14,6 +15,12 @@ from services.dictionary_ops.starter_data import STARTER_MANGA_ENTRIES
 
 _build_lock = threading.Lock()
 _schema_lock = threading.Lock()
+
+# Версия базы словаря: инкрементируется после пересборки, чтобы thread-local
+# read-only соединения не держали устаревший снапшот.
+_dict_version = 0
+_dict_version_lock = threading.Lock()
+_read_conn_local = threading.local()
 _build_progress: Dict[str, Any] = {
     "is_building": False,
     "stage": "idle",
@@ -32,6 +39,61 @@ def get_dict_db_connection(db_path: Path = JP_DICT_DB_PATH) -> sqlite3.Connectio
     conn.execute("PRAGMA mmap_size = 268435456;")
     conn.execute("PRAGMA cache_size = -64000;")
     conn.execute("PRAGMA temp_store = 2;")
+    return conn
+
+
+def bump_dict_version() -> None:
+    """Сбрасывает кэш read-only соединений после пересборки словаря."""
+    global _dict_version
+    with _dict_version_lock:
+        _dict_version += 1
+
+
+def get_readonly_dict_connection(db_path: Path = JP_DICT_DB_PATH) -> sqlite3.Connection:
+    """
+    Возвращает переиспользуемое read-only соединение для текущего потока.
+
+    Раньше на каждый вызов _query_exact_terms открывалось новое соединение и
+    заново выставлялись 5 PRAGMA — 15-40 раз на один бабл. Соединение
+    переоткрывается при пересборке словаря (bump_dict_version) или изменении
+    файла базы.
+    """
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        mtime_ns = os.stat(db_path).st_mtime_ns
+    except OSError:
+        mtime_ns = 0
+
+    cache: Dict[str, Tuple[int, int, sqlite3.Connection]] = getattr(
+        _read_conn_local, "conns", None
+    ) or {}
+    _read_conn_local.conns = cache
+
+    key = str(db_path)
+    entry = cache.get(key)
+    if entry and entry[0] == _dict_version and entry[1] == mtime_ns:
+        return entry[2]
+
+    if entry:
+        try:
+            entry[2].close()
+        except Exception:
+            pass
+
+    # as_uri() корректно экранирует пробелы, '#', '?' и кириллицу в пути.
+    uri = f"{db_path.resolve().as_uri()}?mode=ro"
+    try:
+        conn = sqlite3.connect(uri, uri=True, timeout=20.0)
+    except sqlite3.OperationalError:
+        # WAL-база без доступного -shm не открывается read-only (например,
+        # сразу после пересборки) — откатываемся к обычному соединению.
+        conn = sqlite3.connect(str(db_path), timeout=20.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA query_only = ON;")
+    conn.execute("PRAGMA mmap_size = 268435456;")
+    conn.execute("PRAGMA cache_size = -64000;")
+    conn.execute("PRAGMA temp_store = 2;")
+    cache[key] = (_dict_version, mtime_ns, conn)
     return conn
 
 
@@ -87,6 +149,11 @@ def ensure_jp_dict_schema(db_path: Path = JP_DICT_DB_PATH) -> None:
                     seed_rows,
                 )
                 conn.commit()
+
+
+def is_dictionary_building() -> bool:
+    """O(1)-проверка флага сборки словаря (без DDL и COUNT(*) по 300k строк)."""
+    return bool(_build_progress.get("is_building"))
 
 
 def get_dictionary_status(db_path: Path = JP_DICT_DB_PATH) -> Dict[str, Any]:

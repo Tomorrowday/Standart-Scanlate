@@ -1,42 +1,14 @@
-import sqlite3
 from database import db_session, get_db
 from schemas import UpdateTitleSettingsRequest
-from config import get_available_detectors, get_available_cleaners, get_available_ocr_models
-from ml.models import ml
+from config import get_available_detectors, get_available_cleaners, get_available_ocr_models, get_available_brush_models
 from logger import logger
-
-
-def _ensure_global_settings_columns(cur: sqlite3.Cursor):
-    """Гарантирует существование всех требуемых колонок в таблице global_settings."""
-    cur.execute("PRAGMA table_info(global_settings)")
-    cols = {row[1] for row in cur.fetchall()}
-    if "show_sfx" not in cols:
-        try:
-            cur.execute("ALTER TABLE global_settings ADD COLUMN show_sfx INTEGER DEFAULT 0")
-        except Exception as e:
-            logger.debug(f"Колонка show_sfx уже существует или ошибка добавления: {e}")
-    if "dict_nlp_mode" not in cols:
-        try:
-            cur.execute("ALTER TABLE global_settings ADD COLUMN dict_nlp_mode TEXT DEFAULT 'auto'")
-        except Exception as e:
-            logger.debug(f"Колонка dict_nlp_mode уже существует или ошибка добавления: {e}")
-    if "ocr_model" not in cols:
-        try:
-            cur.execute("ALTER TABLE global_settings ADD COLUMN ocr_model TEXT DEFAULT 'manga-ocr-base'")
-        except Exception as e:
-            logger.debug(f"Колонка ocr_model уже существует: {e}")
-    if "export_format" not in cols:
-        try:
-            cur.execute("ALTER TABLE global_settings ADD COLUMN export_format TEXT DEFAULT 'png'")
-        except Exception as e:
-            logger.debug(f"Колонка export_format уже существует: {e}")
+from services.page_service_ops.active_settings import invalidate_global_settings_cache
 
 
 def get_global_settings_endpoint():
     """Получить глобальные настройки приложения."""
     with get_db() as conn:
         cursor = conn.cursor()
-        _ensure_global_settings_columns(cursor)
         cursor.execute("SELECT * FROM global_settings WHERE id = 1")
         row = cursor.fetchone()
 
@@ -55,6 +27,10 @@ def get_global_settings_endpoint():
         "show_sfx": 0,
         "dict_nlp_mode": "auto",
         "export_format": "png",
+        "brush_model": "opencv",
+        "brush_threshold": 0.5,
+        "brush_extra_dilate": 0,
+        "brush_max_side": 512,
     }
 
     settings["auto_oval_bubble"] = bool(settings.get("auto_oval_bubble", 1))
@@ -72,8 +48,22 @@ def get_global_settings_endpoint():
     settings["available_ocr_models"] = get_available_ocr_models()
     settings["available_cleaners"] = get_available_cleaners()
 
-    if hasattr(ml, "lama_downscale"):
-        ml.lama_downscale = settings["lama_downscale"]
+    available_brush = get_available_brush_models()
+    settings["available_brush_models"] = available_brush
+    brush_current = settings.get("brush_model")
+    settings["brush_model"] = brush_current if brush_current in available_brush else "opencv"
+    try:
+        settings["brush_threshold"] = float(settings.get("brush_threshold", 0.5) or 0.5)
+    except (TypeError, ValueError):
+        settings["brush_threshold"] = 0.5
+    try:
+        settings["brush_extra_dilate"] = int(settings.get("brush_extra_dilate", 0) or 0)
+    except (TypeError, ValueError):
+        settings["brush_extra_dilate"] = 0
+    try:
+        settings["brush_max_side"] = int(settings.get("brush_max_side", 512) or 512)
+    except (TypeError, ValueError):
+        settings["brush_max_side"] = 512
 
     return {"success": True, "settings": settings}
 
@@ -82,7 +72,6 @@ def update_global_settings_endpoint(req: UpdateTitleSettingsRequest):
     """Обновить глобальные настройки приложения (частичное обновление: None = оставить текущее)."""
     with get_db() as conn:
         cursor = conn.cursor()
-        _ensure_global_settings_columns(cursor)
         cursor.execute("SELECT * FROM global_settings WHERE id = 1")
         row = cursor.fetchone()
 
@@ -150,16 +139,40 @@ def update_global_settings_endpoint(req: UpdateTitleSettingsRequest):
     else:
         export_format_val = "png"
 
+    available_brush = get_available_brush_models()
+    req_brush_model = (req.brush_model or "").strip()
+    if req_brush_model in available_brush:
+        brush_model_val = req_brush_model
+    elif current.get("brush_model") in available_brush:
+        brush_model_val = current["brush_model"]
+    else:
+        brush_model_val = "opencv"
+
+    if req.brush_threshold is not None:
+        brush_threshold_val = min(0.9, max(0.1, float(req.brush_threshold)))
+    else:
+        brush_threshold_val = min(0.9, max(0.1, float(current.get("brush_threshold") or 0.5)))
+
+    if req.brush_extra_dilate is not None:
+        brush_extra_dilate_val = min(16, max(-8, int(req.brush_extra_dilate)))
+    else:
+        brush_extra_dilate_val = min(16, max(-8, int(current.get("brush_extra_dilate") or 0)))
+
+    if req.brush_max_side is not None:
+        raw_max_side = int(req.brush_max_side)
+    else:
+        raw_max_side = int(current.get("brush_max_side") or 512)
+    brush_max_side_val = max(128, min(2048, int(round(raw_max_side / 32.0)) * 32))
+
     with db_session() as cur:
-        _ensure_global_settings_columns(cur)
         cur.execute(
             """
             INSERT INTO global_settings (
                 id, detector_model, ocr_model, clean_model, detect_conf,
                 auto_oval_bubble, default_padding, default_hyphenation,
                 font_bubble, font_thought, font_sfx, lama_downscale, show_sfx, dict_nlp_mode,
-                export_format
-            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                export_format, brush_model, brush_threshold, brush_extra_dilate, brush_max_side
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 detector_model = excluded.detector_model,
                 ocr_model = excluded.ocr_model,
@@ -174,17 +187,21 @@ def update_global_settings_endpoint(req: UpdateTitleSettingsRequest):
                 lama_downscale = excluded.lama_downscale,
                 show_sfx = excluded.show_sfx,
                 dict_nlp_mode = excluded.dict_nlp_mode,
-                export_format = excluded.export_format
+                export_format = excluded.export_format,
+                brush_model = excluded.brush_model,
+                brush_threshold = excluded.brush_threshold,
+                brush_extra_dilate = excluded.brush_extra_dilate,
+                brush_max_side = excluded.brush_max_side
             """,
-            (detector, ocr_model_val, cleaner, conf, auto_oval, padding, hyph, font_b, font_t, font_s, downscale, show_sfx_val, nlp_mode_val, export_format_val)
+            (detector, ocr_model_val, cleaner, conf, auto_oval, padding, hyph, font_b, font_t, font_s, downscale, show_sfx_val, nlp_mode_val, export_format_val, brush_model_val, brush_threshold_val, brush_extra_dilate_val, brush_max_side_val)
         )
 
         cur.execute("SELECT show_sfx FROM global_settings WHERE id = 1")
         row_sfx = cur.fetchone()
         actual_show_sfx = bool(row_sfx["show_sfx"]) if (row_sfx and "show_sfx" in row_sfx.keys()) else False
 
-    if hasattr(ml, "lama_downscale"):
-        ml.lama_downscale = bool(downscale)
+    # Настройки изменились — следующий читатель обязан увидеть новые значения.
+    invalidate_global_settings_cache()
 
     logger.info(f"Глобальные настройки обновлены: сжатие={bool(downscale)}, show_sfx={actual_show_sfx}.")
     return {
@@ -204,6 +221,10 @@ def update_global_settings_endpoint(req: UpdateTitleSettingsRequest):
             "show_sfx": actual_show_sfx,
             "dict_nlp_mode": nlp_mode_val,
             "export_format": export_format_val,
+            "brush_model": brush_model_val,
+            "brush_threshold": brush_threshold_val,
+            "brush_extra_dilate": brush_extra_dilate_val,
+            "brush_max_side": brush_max_side_val,
         }
     }
 
@@ -218,3 +239,7 @@ def get_available_cleaners_endpoint():
 
 def get_available_ocr_models_endpoint():
     return {"success": True, "ocr_models": get_available_ocr_models()}
+
+
+def get_available_brush_models_endpoint():
+    return {"success": True, "brush_models": get_available_brush_models()}

@@ -2,6 +2,7 @@
 # Пакет операций менеджера ML-моделей: VRAM, LaMa, OCR-адаптеры и синглтон MLManager
 
 from ml.models_ops.vram import _get_device, release_vram
+from ml.models_ops.brush_wrapper import BrushMaskWrapper
 from ml.models_ops.lama_wrapper import AccurateLamaWrapper
 from ml.models_ops.ocr_adapters import (
     HayaiOcrAdapter,
@@ -14,6 +15,7 @@ __all__ = [
     "_get_device",
     "release_vram",
     "AccurateLamaWrapper",
+    "BrushMaskWrapper",
     "HayaiOcrAdapter",
     "PaddleOcrVlAdapter",
     "_create_ocr_engine",

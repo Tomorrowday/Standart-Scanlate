@@ -1,25 +1,13 @@
 """
-Сервис перевода текста манги (Gemini API, санитизация и разбор реплик).
-Зависимости: re, ml.models (ml), schemas.BatchTranslateItem, logger, services.prompts
+Общие утилиты перевода манги: разбор нумерованного ответа LLM и санитизация
+перевода. Используется сервисом Ollama (services.translator_ops.ollama) и
+импортом/экспортом диалогов.
+
+Зависимости: re
 """
 
 import re
-from typing import List, Dict, Any, Optional
-from ml.models import ml
-from schemas import BatchTranslateItem
-from logger import logger
-from services.prompts import (
-    build_single_translate_prompt,
-    build_page_batch_prompt,
-    build_chapter_batch_prompt,
-)
-
-CLASS_TYPE_LABELS = {
-    0: "bubble",
-    1: "thought",
-    2: "text",
-    3: "sfx",
-}
+from typing import Dict, List, Optional
 
 
 def _parse_numbered_blocks(raw_text: str) -> Dict[int, str]:
@@ -28,16 +16,24 @@ def _parse_numbered_blocks(raw_text: str) -> Dict[int, str]:
     Строки без маркера присоединяются к предыдущему блоку через `\\n`,
     чтобы не терять многострочные переводы одной реплики.
     """
+    # Reasoning-модели (qwen3, deepseek-r1, qwq) выводят черновики в <think>...
+    # Теги часто содержат собственные маркеры [1], которые иначе склеились бы
+    # с финальным ответом.
+    cleaned = re.sub(r"<think>[\s\S]*?</think>", "", raw_text, flags=re.IGNORECASE)
+    # Генерация могла оборваться внутри <think> без закрывающего тега.
+    cleaned = re.sub(r"<think>[\s\S]*$", "", cleaned, flags=re.IGNORECASE)
+
     blocks: Dict[int, List[str]] = {}
     order: List[int] = []
     current_idx: Optional[int] = None
 
-    for raw_line in raw_text.split("\n"):
+    for raw_line in cleaned.split("\n"):
         line = raw_line.strip()
         if not line or line.startswith("```"):
             continue
 
-        match = re.match(r"^\[(\d+)\]\s*(.*)$", line)
+        # Поддерживаем markdown-разметку: **[1]** текст и [1]: текст.
+        match = re.match(r"^(?:\*{1,2})?\[(\d+)\](?:\*{1,2})?\s*:?\s*(.*)$", line)
         if match:
             current_idx = int(match.group(1)) - 1
             if current_idx not in blocks:
@@ -101,87 +97,3 @@ def sanitize_translation(text: str) -> str:
     clean = _strip_wrapping_quotes(clean)
 
     return clean.strip()
-
-
-def translate_single_text(text: str, title_description: str = "") -> str:
-    """Перевод одиночной реплики."""
-    if not ml.gemini_model:
-        raise RuntimeError("Gemini API не сконфигурирован")
-
-    prompt = build_single_translate_prompt(text, title_description)
-    logger.info(f"--- [Gemini Single] Запрос:\n{text}")
-    response = ml.gemini_model.generate_content(prompt)
-    result = sanitize_translation(response.text.strip())
-    logger.info(f"--- [Gemini Single] Ответ:\n{result}")
-    return result
-
-
-def translate_batch_items(
-    items: List[BatchTranslateItem],
-    title_description: str = "",
-    glossary_rows: Optional[List[Dict[str, Any]]] = None
-) -> Dict[str, str]:
-    """Пакетный перевод реплик одной страницы."""
-    if not ml.gemini_model:
-        raise RuntimeError("Gemini API не сконфигурирован")
-    if not items:
-        return {}
-
-    lines = []
-    for i, item in enumerate(items):
-        b_type = CLASS_TYPE_LABELS.get(int(item.class_id or 0), "bubble")
-        speaker_prefix = f"[{item.speaker}]: " if item.speaker and item.speaker.strip() else ""
-        lines.append(f"[{i + 1}] ({b_type}) {speaker_prefix}{item.text}")
-
-    dialogue_text = "\n".join(lines)
-    prompt = build_page_batch_prompt(dialogue_text, title_description, glossary_rows)
-
-    logger.info(f"=== [Gemini Page Batch] Отправка {len(items)} реплик на перевод ===")
-    response = ml.gemini_model.generate_content(prompt)
-    raw_text = response.text.strip()
-    logger.info(f"=== [Gemini Page Batch] Ответ нейросети:\n{raw_text}")
-
-    result_map = {}
-    for idx, translated in _parse_numbered_blocks(raw_text).items():
-        if 0 <= idx < len(items):
-            item_id = items[idx].id
-            result_map[item_id] = sanitize_translation(translated)
-
-    return result_map
-
-
-def translate_chapter_dialogues(
-    chapter_dialogue: List[Dict[str, Any]],
-    glossary_rows: List[Dict[str, Any]],
-    title_description: str = ""
-) -> Dict[str, str]:
-    """Перевод реплик всей главы манги."""
-    if not ml.gemini_model:
-        raise RuntimeError("Gemini API не сконфигурирован")
-    if not chapter_dialogue:
-        return {}
-
-    lines = []
-    for i, item in enumerate(chapter_dialogue):
-        b_type = CLASS_TYPE_LABELS.get(int(item.get("class_id") or 0), "bubble")
-        spk = f"[{item['speaker']}]: " if item.get("speaker") else ""
-        lines.append(f"[{i + 1}] ({b_type}) (Стр. {item['page']}) {spk}{item['text']}")
-
-    full_text = "\n".join(lines)
-    prompt = build_chapter_batch_prompt(full_text, title_description, glossary_rows)
-
-    logger.info(f"========== [Gemini Chapter Batch] ЗАПРОС ПЕРЕВОДА ГЛАВЫ ==========")
-    logger.info(f"Фраз: {len(chapter_dialogue)}, глоссарий: {len(glossary_rows)}, синопсис: {bool(title_description)}")
-
-    response = ml.gemini_model.generate_content(prompt)
-    raw_text = response.text.strip()
-    logger.info(f"========== [Gemini Chapter Batch] ОТВЕТ ==========\n{raw_text}")
-
-    result_map = {}
-    for idx, trans in _parse_numbered_blocks(raw_text).items():
-        if 0 <= idx < len(chapter_dialogue):
-            block_id = chapter_dialogue[idx]["id"]
-            result_map[block_id] = sanitize_translation(trans)
-
-    logger.info(f"Успешно сопоставлено: {len(result_map)} из {len(chapter_dialogue)}")
-    return result_map

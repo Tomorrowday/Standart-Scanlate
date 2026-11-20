@@ -1,7 +1,7 @@
 // manga_ui/hooks/use-manga-settings.ts
 // Глобальные настройки приложения и базовый кегль шрифта текущего тайтла
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import type { TitleSettings } from "@/lib/types"
 import { getGlobalSettings, updateTitleSettings } from "@/lib/api"
 
@@ -21,12 +21,12 @@ export interface UseMangaSettingsReturn {
   globalSettings: TitleSettings
   setGlobalSettings: React.Dispatch<React.SetStateAction<TitleSettings>>
   currentTitleId: number | null
-  setCurrentTitleId: (titleId: number) => void
+  setCurrentTitleId: (titleId: number | null) => void
   titleFontSize: number
   setTitleFontSize: React.Dispatch<React.SetStateAction<number>>
   isApplyingChapterFont: boolean
   setIsApplyingChapterFont: React.Dispatch<React.SetStateAction<boolean>>
-  handleTitleFontSizeChange: (newSize: number) => Promise<void>
+  handleTitleFontSizeChange: (newSize: number) => void
   handleTitleSelected: (titleId: number, defaultFontSize?: number) => void
 }
 
@@ -53,15 +53,36 @@ export function useMangaSettings(): UseMangaSettingsReturn {
     loadSettings()
   }, [])
 
-  const handleTitleFontSizeChange = useCallback(async (newSize: number) => {
-    setTitleFontSize(newSize)
-    if (currentTitleId) {
-      try {
-        await updateTitleSettings(currentTitleId, { default_font_size: newSize } as any)
-      } catch (err) {
-        console.warn("Не удалось сохранить размер шрифта тайтла:", err)
-      }
+  // Debounce сохранения кегля: быстрые клики +/- не должны слать серию
+  // параллельных PUT, ответы которых могут прийти не по порядку.
+  const fontSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fontSaveSeqRef = useRef(0)
+
+  useEffect(() => {
+    return () => {
+      if (fontSaveTimerRef.current) clearTimeout(fontSaveTimerRef.current)
     }
+  }, [])
+
+  const handleTitleFontSizeChange = useCallback((newSize: number) => {
+    // Оптимистичное локальное обновление — UI реагирует мгновенно.
+    setTitleFontSize(newSize)
+    const titleId = currentTitleId
+    if (!titleId) return
+
+    if (fontSaveTimerRef.current) clearTimeout(fontSaveTimerRef.current)
+    fontSaveTimerRef.current = setTimeout(() => {
+      fontSaveTimerRef.current = null
+      const seq = ++fontSaveSeqRef.current
+      updateTitleSettings(titleId, { default_font_size: newSize } as any)
+        .then(() => {
+          // Устаревший ответ игнорируем: актуальное значение уже отправлено.
+          if (seq !== fontSaveSeqRef.current) return
+        })
+        .catch((err) => {
+          console.warn("Не удалось сохранить размер шрифта тайтла:", err)
+        })
+    }, 400)
   }, [currentTitleId])
 
   const handleTitleSelected = useCallback((titleId: number, defaultFontSize?: number) => {

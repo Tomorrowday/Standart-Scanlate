@@ -1,8 +1,22 @@
 import os
+from urllib.parse import quote
 from fastapi import HTTPException, UploadFile
 from fastapi.responses import Response
 import services.chapter_service as chapter_service
 from logger import logger
+
+
+def _build_attachment_header(filename: str) -> str:
+    """Формирует Content-Disposition с ASCII-фоллбэком и UTF-8 именем (RFC 5987)."""
+    # Убираем переводы строк и кавычки, чтобы нельзя было инжектировать заголовок.
+    safe_name = filename.replace('"', "").replace("\r", "").replace("\n", "").strip()
+    if not safe_name:
+        safe_name = "dialogues.json"
+    ascii_fallback = safe_name.encode("ascii", "ignore").decode().strip() or "dialogues.json"
+    return (
+        f'attachment; filename="{ascii_fallback}"; '
+        f"filename*=UTF-8''{quote(safe_name, safe='')}"
+    )
 
 
 def export_chapter_dialogue(chapter_id: int) -> Response:
@@ -11,7 +25,7 @@ def export_chapter_dialogue(chapter_id: int) -> Response:
         return Response(
             content=dialogues_json_str,
             media_type="application/json",
-            headers={"Content-Disposition": f'attachment; filename="{dialogues_filename}"'}
+            headers={"Content-Disposition": _build_attachment_header(dialogues_filename)}
         )
     except Exception as e:
         logger.error(f"Ошибка экспорта диалогов главы {chapter_id}: {e}")
@@ -46,6 +60,7 @@ def pick_and_import_dialogue_endpoint(chapter_id: int):
     Если файл не найден, возвращает {"success": False, "auto_found": False, "cancelled": False},
     чтобы фронтенд открыл стандартное окно выбора файла без HTTP-ошибки 404.
     """
+    target_file = None
     try:
         folder_path = chapter_service.get_chapter_folder_path(chapter_id)
         if not folder_path or not os.path.exists(folder_path):
@@ -70,6 +85,13 @@ def pick_and_import_dialogue_endpoint(chapter_id: int):
         }
     except Exception as e:
         logger.error(f"Ошибка автоматического импорта главы {chapter_id}: {e}")
+        # Файл нашли, но он битый/не импортировался — это реальная ошибка 400,
+        # иначе фронтенд молча откроет диалог выбора и пользователь не поймёт причину.
+        if target_file and os.path.exists(target_file):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Файл '{os.path.basename(target_file)}' повреждён: {e}",
+            )
         return {"success": False, "auto_found": False, "cancelled": False, "error": str(e)}
 
 

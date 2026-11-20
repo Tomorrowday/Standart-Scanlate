@@ -30,6 +30,10 @@ class UpdateTitleSettingsRequest(BaseModel):
     show_sfx: Optional[bool] = None
     dict_nlp_mode: Optional[str] = None
     export_format: Optional[str] = None
+    brush_model: Optional[str] = None
+    brush_threshold: Optional[float] = None
+    brush_extra_dilate: Optional[int] = None
+    brush_max_side: Optional[int] = None
 
 
 class GlossaryItemCreate(BaseModel):

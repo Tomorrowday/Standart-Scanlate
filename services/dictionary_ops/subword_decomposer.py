@@ -70,9 +70,12 @@ class SubwordDecomposerMixin:
 
         # 2. Если токен длинный (составное слово из 2+ корней, например через Sudachi SplitMode.A или префиксы Rikaikun)
         sub_parts: List[str] = []
-        if self._init_sudachi() and self._sudachi_tokenizer is not None and self._sudachi_mode_a is not None:
+        if self._init_sudachi():
             with self._nlp_lock:
-                a_morphs = list(self._sudachi_tokenizer.tokenize(surface, self._sudachi_mode_a))
+                # Ссылки берём под локом: unload_models() мог обнулить атрибуты.
+                tokenizer = self._sudachi_tokenizer
+                mode_a = self._sudachi_mode_a
+                a_morphs = list(tokenizer.tokenize(surface, mode_a)) if tokenizer is not None and mode_a is not None else []
             if len(a_morphs) > 1:
                 for am in a_morphs:
                     part_form = am.dictionary_form() or am.surface()

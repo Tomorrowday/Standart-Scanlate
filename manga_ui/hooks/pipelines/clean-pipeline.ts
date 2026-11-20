@@ -15,6 +15,8 @@ export async function executeCleanPage(
     setViewMode,
     onPageStatusUpdate,
     setIsCleaning,
+    recordCleanAction,
+    discardLastSnapshot,
   } = ctx
   const currentPage = ctx.currentPage
   if (!currentPage) return
@@ -23,17 +25,26 @@ export async function executeCleanPage(
     return
   }
 
+  // Фиксируем страницу до await: пользователь мог переключиться, пока идёт клин.
+  const targetPageId = currentPage.id
+  const { isCurrentPage } = ctx
+
   setIsCleaning(true)
   try {
     await saveBlocks(true)
-    const res = await runCleanPage(currentPage.id, mode)
+    // Бэкенд делает бэкап скана (одна ступень) — добавляем шаг в Undo-стек,
+    // чтобы Ctrl+Z откатил и файл клина, а не только разметку.
+    recordCleanAction()
+    const res = await runCleanPage(targetPageId, mode)
     if (res.success) {
-      setViewMode("clean")
-      onPageStatusUpdate(currentPage.id, (res.page_status as PageStatus) || "cleaned", res.clean_path)
+      if (isCurrentPage(targetPageId)) setViewMode("clean")
+      onPageStatusUpdate(targetPageId, (res.page_status as PageStatus) || "cleaned", res.clean_path)
     } else {
+      if (isCurrentPage(targetPageId)) discardLastSnapshot()
       alert("Ошибка клина: " + res.error)
     }
   } catch (e) {
+    if (isCurrentPage(targetPageId)) discardLastSnapshot()
     console.error(e)
     alert("Не удалось очистить страницу")
   } finally {
@@ -47,18 +58,24 @@ export async function executeRevertClean(ctx: PagePipelineContext): Promise<void
     setViewMode,
     onPageStatusUpdate,
     setIsRevertingClean,
+    isCurrentPage,
   } = ctx
   const currentPage = ctx.currentPage
   if (!currentPage || !currentPage.clean_path) return
   if (!confirm("Откатить клин этой страницы и вернуться к исходному скану?")) return
 
+  const targetPageId = currentPage.id
+
   setIsRevertingClean(true)
   try {
-    const res = await revertCleanPage(currentPage.id)
+    const res = await revertCleanPage(targetPageId)
     if (res.success) {
-      setCurrentPage((prev) => (prev ? { ...prev, clean_path: undefined, status: res.page_status } : null))
-      setViewMode("original")
-      onPageStatusUpdate(currentPage.id, res.page_status, "")
+      // Не стираем clean_path у другой страницы, если пользователь переключился.
+      setCurrentPage((prev) =>
+        prev && prev.id === targetPageId ? { ...prev, clean_path: undefined, status: res.page_status } : prev
+      )
+      if (isCurrentPage(targetPageId)) setViewMode("original")
+      onPageStatusUpdate(targetPageId, res.page_status, "")
     } else {
       alert("Ошибка отката клина: " + (res.error || res.detail))
     }

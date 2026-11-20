@@ -36,6 +36,41 @@ export interface ReflowOptions {
   hadForcedSingleLine?: boolean
 }
 
+/** Количество слов в каждой строке — устойчивый отпечаток ручной разбивки. */
+export function getLineWordCounts(lines: string[]): number[] {
+  return lines.map((l) => l.trim().split(/\s+/).filter(Boolean).length)
+}
+
+/**
+ * Определяет, менял ли пользователь структуру строк.
+ *
+ * Недостаточно сравнивать только число строк: перенос слова на соседнюю
+ * строку (`"Привет как\nдела"` → `"Привет\nкак дела"`) сохраняет их количество,
+ * но это уже ручная разбивка. Сравниваем распределение слов по строкам.
+ *
+ * `prevLineCount` — число строк на предыдущем onChange, `hadBreakEdit` —
+ * был ли Enter/Backspace по переносам в этой сессии. Если пользователь нажал
+ * Enter и сразу Backspace в том же месте, распределение слов совпадёт
+ * со снапшотом — блок возвращается в авто-режим.
+ */
+export function hasModifiedLineBreaks(
+  snapshotLines: string[],
+  editedValue: string,
+  prevLineCount: number,
+  hadBreakEdit: boolean
+): boolean {
+  const nextLines = editedValue.split(/\r?\n/)
+  const hadEdit = hadBreakEdit || nextLines.length !== prevLineCount
+
+  if (nextLines.length !== snapshotLines.length) return true
+  if (!hadEdit) return false
+
+  const nextCounts = getLineWordCounts(nextLines)
+  const snapshotCounts = getLineWordCounts(snapshotLines)
+  if (nextCounts.length !== snapshotCounts.length) return true
+  return nextCounts.some((count, idx) => count !== snapshotCounts[idx])
+}
+
 /** Есть ли в тексте ручные переносы строк или маркер принудительной однострочности. */
 export function hasManualLineBreaks(text: string | null | undefined): boolean {
   if (!text) return false

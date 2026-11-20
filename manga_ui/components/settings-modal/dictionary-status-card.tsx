@@ -66,6 +66,12 @@ export function DictionaryStatusCard({
       } else {
         await fetchStatus()
       }
+      // Ошибку сборки бэкенд отдаёт HTTP 200 с success: false — показываем её,
+      // кроме информационного случая «сборка уже выполняется».
+      const alreadyBuilding = (res.message || "").includes("уже выполняется")
+      if (!res.success && res.error && !alreadyBuilding) {
+        alert("Ошибка сборки словаря: " + res.error)
+      }
     } catch (e) {
       alert("Ошибка сборки словаря: " + String(e))
     } finally {
@@ -157,6 +163,13 @@ export function DictionaryStatusCard({
       {building && status?.build_progress?.message && (
         <div className="rounded border border-amber-800/50 bg-amber-950/30 px-2.5 py-1.5 text-[11px] text-amber-200">
           {status.build_progress.message}
+        </div>
+      )}
+
+      {/* Ошибка сборки не должна исчезать сразу после setBuilding(false). */}
+      {!building && status?.build_progress?.error && (
+        <div className="rounded border border-rose-800/60 bg-rose-950/30 px-2.5 py-1.5 text-[11px] text-rose-200">
+          Ошибка сборки словаря: {status.build_progress.error}
         </div>
       )}
 

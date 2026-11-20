@@ -4,8 +4,62 @@
  * Реализация запросов для страниц, баблов, пошагового отката клина и взаимодействия с бэкендом.
  */
 
-import type { PageItem } from "../types"
+import type { PageItem, TextBlock } from "../types"
 import { API_BASE_URL, handleApiResponse } from "./client"
+
+/** Payload одного бабла для POST /api/pages/{id}/blocks. */
+export interface PageBlockPayload {
+  id: string
+  class_id?: number
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation?: number
+  jap_text: string
+  rus_text: string
+  speaker?: string
+  order_index?: number
+  font_size?: number
+  font_family?: string
+  is_bold?: boolean
+  is_italic?: boolean
+  is_uppercase?: boolean
+  has_stroke?: boolean
+  text_color?: string
+  shape?: string
+  padding_mode?: string
+  min_hyphens?: boolean
+  status: string
+}
+
+/** Единое преобразование TextBlock → payload (используется обычным и keepalive-сохранением). */
+export function toPageBlocksPayload(blocks: TextBlock[]): PageBlockPayload[] {
+  return blocks.map((b) => ({
+    id: b.id,
+    class_id: b.class_id ?? 0,
+    x: b.x,
+    y: b.y,
+    width: b.width,
+    height: b.height,
+    rotation: b.rotation || 0,
+    jap_text: b.japText,
+    rus_text: b.rusText,
+    speaker: b.speaker || "",
+    order_index: b.orderIndex || 0,
+    font_size: b.fontSize !== undefined && b.fontSize !== null ? Number(b.fontSize) : undefined,
+    font_family: b.fontFamily || "v_CCFaceFront",
+    is_bold: Boolean(b.isBold),
+    is_italic: Boolean(b.isItalic),
+    is_uppercase: Boolean(b.isUppercase),
+    has_stroke: Boolean(b.hasStroke),
+    text_color: b.textColor || "black",
+    shape: b.shape || "rect",
+    padding_mode: b.paddingMode || "safe",
+    min_hyphens: b.minHyphens !== undefined ? Boolean(b.minHyphens) : true,
+    status: b.status,
+  }))
+}
 
 export function getPageImageUrl(pageId: number): string {
   return `${API_BASE_URL}/api/pages/${pageId}/image`
@@ -39,9 +93,10 @@ export async function unloadAllModels(): Promise<{
   return await handleApiResponse(res, "Ошибка выгрузки моделей")
 }
 
-export async function getPageDetails(pageId: number): Promise<PageItem | null> {
+export async function getPageDetails(pageId: number, cleanupBackups = true): Promise<PageItem | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/pages/${pageId}`)
+    const query = cleanupBackups ? "" : "?cleanup_backups=false"
+    const res = await fetch(`${API_BASE_URL}/api/pages/${pageId}${query}`)
     const data = await res.json()
     return data.success ? data.page : null
   } catch {
@@ -60,20 +115,17 @@ export async function getPageSpeakers(pageId: number): Promise<string[]> {
 }
 
 export async function runPageAutoDetect(pageId: number, conf?: number, autoOval?: boolean) {
-  try {
-    const params = new URLSearchParams()
-    if (conf !== undefined) params.append("conf", String(conf))
-    if (autoOval !== undefined) params.append("auto_oval", String(autoOval))
-    const query = params.toString() ? `?${params.toString()}` : ""
+  const params = new URLSearchParams()
+  if (conf !== undefined) params.append("conf", String(conf))
+  if (autoOval !== undefined) params.append("auto_oval", String(autoOval))
+  const query = params.toString() ? `?${params.toString()}` : ""
 
-    const response = await fetch(`${API_BASE_URL}/api/pages/${pageId}/detect${query}`, {
-      method: "POST",
-    })
-    return await handleApiResponse<any>(response, "Ошибка сервера детекции")
-  } catch (error) {
-    console.error("Page Detect failed:", error)
-    return { success: false, boxes: [] }
-  }
+  const response = await fetch(`${API_BASE_URL}/api/pages/${pageId}/detect${query}`, {
+    method: "POST",
+  })
+  // Реальный сбой — исключение (architecture-decisions.md §16), а не
+  // success: false с HTTP 200: иначе UI помечает упавшую страницу как detected.
+  return await handleApiResponse<any>(response, "Ошибка сервера детекции")
 }
 
 export async function getPageBlocks(pageId: number) {
@@ -83,39 +135,36 @@ export async function getPageBlocks(pageId: number) {
   return data.blocks
 }
 
-export async function savePageBlocks(
-  pageId: number,
-  blocks: Array<{
-    id: string
-    class_id?: number
-    x: number
-    y: number
-    width: number
-    height: number
-    rotation?: number
-    jap_text: string
-    rus_text: string
-    speaker?: string
-    order_index?: number
-    font_size?: number
-    font_family?: string
-    is_bold?: boolean
-    is_italic?: boolean
-    is_uppercase?: boolean
-    has_stroke?: boolean
-    text_color?: string
-    shape?: string
-    padding_mode?: string
-    min_hyphens?: boolean
-    status: string
-  }>
-) {
+export async function savePageBlocks(pageId: number, blocks: PageBlockPayload[]) {
   const res = await fetch(`${API_BASE_URL}/api/pages/${pageId}/blocks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ blocks }),
   })
   return await handleApiResponse<any>(res, "Ошибка сохранения баблов")
+}
+
+/**
+ * Best-effort сохранение при закрытии вкладки через `keepalive`.
+ * Браузер ограничивает тело ~64 КБ, поэтому крупные страницы не отправляем
+ * (остаётся только предупреждение beforeunload).
+ */
+export function savePageBlocksKeepalive(pageId: number, blocks: PageBlockPayload[]): void {
+  try {
+    const body = JSON.stringify({ blocks })
+    if (new Blob([body]).size > 64 * 1024) {
+      console.warn("Keepalive-сохранение пропущено: payload больше 64 КБ")
+      return
+    }
+    void fetch(`${API_BASE_URL}/api/pages/${pageId}/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true,
+    }).catch((e) => console.warn("Keepalive-сохранение не удалось:", e))
+  } catch (e) {
+    console.warn("Keepalive-сохранение не удалось:", e)
+  }
 }
 
 export async function runCleanPage(pageId: number, mode: "auto" | "lama" | "white" = "auto") {
@@ -141,7 +190,7 @@ export async function undoLastCleanStep(pageId: number) {
 
 export async function runSpotClean(
   pageId: number,
-  rect: { x: number; y: number; width: number; height: number; rotation?: number; shape?: string },
+  rect: { x: number; y: number; width: number; height: number; rotation?: number; shape?: string; class_id?: number },
   method: "auto" | "lama" | "white" | "lama_box" = "auto"
 ) {
   const res = await fetch(`${API_BASE_URL}/api/pages/${pageId}/clean-spot`, {
@@ -154,6 +203,7 @@ export async function runSpotClean(
       height: rect.height,
       rotation: rect.rotation || 0.0,
       shape: rect.shape || "rect",
+      class_id: rect.class_id ?? 0,
       method,
     }),
   })
@@ -178,10 +228,19 @@ export async function openTranslatedFolder(pageId: number) {
   return await handleApiResponse<any>(res, "Не удалось открыть папку")
 }
 
+/** Bounding box мазка кисти в пикселях оригинального изображения. */
+export interface BrushMaskRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export async function runBrushClean(
   pageId: number,
   maskBase64: string,
-  mode: "lama" | "white" | "black" = "lama"
+  mode: "lama" | "white" | "black" = "lama",
+  maskRect?: BrushMaskRect
 ) {
   const res = await fetch(`${API_BASE_URL}/api/pages/${pageId}/clean-brush`, {
     method: "POST",
@@ -189,6 +248,7 @@ export async function runBrushClean(
     body: JSON.stringify({
       mask_base64: maskBase64,
       mode,
+      mask_rect: maskRect,
     }),
   })
   return await handleApiResponse<any>(res, "Ошибка кисти восстановления")

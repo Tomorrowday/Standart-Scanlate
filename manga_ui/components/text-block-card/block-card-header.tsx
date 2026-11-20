@@ -7,7 +7,7 @@
  */
 
 import type { TextBlock } from "@/lib/types"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useCallback } from "react"
 import {
   ScanText,
   Trash2,
@@ -95,22 +95,14 @@ export function BlockCardHeader({
         block.class_id ?? 0
       )
       onChange({ japText: text, status: block.status === "translated" ? "translated" : "ocr-done" })
+    } catch (e) {
+      // Ошибка OCR не должна затирать существующий текст блока.
+      console.error("Ошибка OCR блока:", e)
+      alert("OCR не удался: " + String(e))
     } finally {
       setOcrLoading(false)
     }
   }, [pageId, ocrLoading, block.id, block.x, block.y, block.width, block.height, block.rotation, block.class_id, block.status, onChange])
-
-  // Подписка на глобальное событие хоткея одиночного OCR [O]
-  useEffect(() => {
-    const onHotkeyOcr = (e: Event) => {
-      const custom = e as CustomEvent<{ blockId: string }>
-      if (custom.detail?.blockId === block.id) {
-        handleOcr()
-      }
-    }
-    window.addEventListener("manga-ocr-selected-block", onHotkeyOcr)
-    return () => window.removeEventListener("manga-ocr-selected-block", onHotkeyOcr)
-  }, [block.id, handleOcr])
 
   const currentClassId = block.class_id ?? 0
   const classCfg = CLASS_CONFIG[currentClassId] || CLASS_CONFIG[0]

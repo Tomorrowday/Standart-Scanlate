@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any
 import torch
 
 import config
+from ml.models_ops.brush_wrapper import BrushMaskWrapper
 from ml.models_ops.lama_wrapper import AccurateLamaWrapper
 from ml.models_ops.ocr_adapters import _create_ocr_engine
 from ml.models_ops.vram import _get_device, release_vram
@@ -25,8 +26,7 @@ class MLManager:
         self._ocr_models: Dict[str, Any] = {}
         self._yolo_models: Dict[str, Any] = {}
         self._cleaners: Dict[str, Any] = {}
-        self.gemini_model = None
-        self.lama_downscale: bool = False
+        self._brushes: Dict[str, Any] = {}
         logger.info(f"MLManager инициализирован. Устройство: {self._device}")
 
     @property
@@ -71,6 +71,13 @@ class MLManager:
             if name in self._yolo_models:
                 return self._yolo_models[name]
 
+            # Не копим старые веса в VRAM при переключении модели в настройках.
+            if self._yolo_models:
+                self._yolo_models.clear()
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
             candidates = [
                 config.DETECT_MODELS_DIR / name,
                 config.WEIGHTS_DIR / name,
@@ -100,6 +107,12 @@ class MLManager:
             if name in self._cleaners:
                 return self._cleaners[name]
 
+            if self._cleaners:
+                self._cleaners.clear()
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
             candidates = [
                 config.CLEAN_MODELS_DIR / name,
                 config.WEIGHTS_DIR / name,
@@ -125,6 +138,56 @@ class MLManager:
             self._cleaners[name] = wrapper
             return wrapper
 
+    def load_brush(self, name: str):
+        """Загружает TorchScript-модель маски текста из weights/brush (U-Net, 4 канала)."""
+        if not name:
+            raise FileNotFoundError("Имя модели клина-маски не задано (weights/brush)")
+
+        with self._lock:
+            if name in self._brushes:
+                return self._brushes[name]
+
+            if self._brushes:
+                self._brushes.clear()
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+            candidates = [
+                config.BRUSH_MODELS_DIR / name,
+                config.WEIGHTS_DIR / name,
+            ]
+            target_path = None
+            for p in candidates:
+                if p.exists():
+                    target_path = str(p)
+                    break
+
+            if not target_path:
+                raise FileNotFoundError(f"Файл модели маски текста '{name}' не найден в папке weights/brush/")
+
+            logger.info(f"Загрузка TorchScript U-Net (маска текста): {target_path}")
+            try:
+                base_model = torch.jit.load(target_path, map_location=self._device)
+                base_model.eval()
+                # Проверка контракта: вход (1,4,64,64) -> выход (1,1,64,64)
+                with torch.inference_mode():
+                    probe = torch.zeros(1, 4, 64, 64, dtype=torch.float32, device=self._device)
+                    probe_out = base_model(probe)
+            except Exception as e:
+                raise RuntimeError(f"Не удалось загрузить модель маски текста '{name}': {e}")
+
+            expected_shape = (1, 1, 64, 64)
+            if tuple(probe_out.shape) != expected_shape:
+                raise RuntimeError(
+                    f"Модель маски текста '{name}' вернула форму {tuple(probe_out.shape)}, "
+                    f"ожидалась {expected_shape}"
+                )
+
+            wrapper = BrushMaskWrapper(base_model, self._device, self._lock)
+            self._brushes[name] = wrapper
+            return wrapper
+
     def release_vram(self):
         return release_vram()
 
@@ -141,6 +204,7 @@ class MLManager:
             self._ocr_models.clear()
             self._yolo_models.clear()
             self._cleaners.clear()
+            self._brushes.clear()
 
         # Словарные NLP-пайплайны живут в отдельном движке. Импорт внутри метода,
         # чтобы не создавать циклическую зависимость ml -> services при старте.
@@ -149,8 +213,6 @@ class MLManager:
             dict_engine.unload_models()
         except Exception as e:
             logger.warning(f"Не удалось выгрузить NLP-модели словаря: {e}")
-
-        self.gemini_model = None
 
         gc.collect()
         if torch.cuda.is_available():

@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from services.cleaner import release_vram
 from ml.models import ml
 from logger import logger
@@ -8,7 +9,7 @@ def release_vram_endpoint():
         release_vram()
         return {"success": True}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def unload_all_models_endpoint():
@@ -25,4 +26,4 @@ def unload_all_models_endpoint():
         return {"success": True, **stats}
     except Exception as e:
         logger.error(f"Ошибка выгрузки моделей: {e}")
-        return {"success": False, "error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))

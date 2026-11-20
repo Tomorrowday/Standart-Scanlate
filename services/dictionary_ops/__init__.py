@@ -12,6 +12,7 @@ from services.dictionary_ops.db_builder import (
     ensure_jp_dict_schema,
     import_yomitan_zip,
     get_dictionary_status,
+    is_dictionary_building,
     download_and_build_dictionaries,
 )
 from services.dictionary_ops.deinflector import (
@@ -31,6 +32,7 @@ __all__ = [
     "ensure_jp_dict_schema",
     "import_yomitan_zip",
     "get_dictionary_status",
+    "is_dictionary_building",
     "download_and_build_dictionaries",
     "DEINFLECT_RULES",
     "POS_MAP_RU",

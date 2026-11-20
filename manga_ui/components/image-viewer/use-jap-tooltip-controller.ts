@@ -26,6 +26,8 @@ export interface UseJapTooltipControllerParams {
   autoJapPlacement?: JapPlatePlacement | null
   onSelect: (id: string) => void
   onUpdate?: (id: string, patch: Partial<TextBlock>) => void
+  /** Транзиентное обновление без Undo/грязного флага (для japOffset). */
+  onUpdateTransient?: (id: string, patch: Partial<TextBlock>) => void
 }
 
 export function useJapTooltipController({
@@ -41,6 +43,7 @@ export function useJapTooltipController({
   autoJapPlacement = null,
   onSelect,
   onUpdate,
+  onUpdateTransient,
 }: UseJapTooltipControllerParams) {
   const [isEditingJap, setIsEditingJap] = useState(false)
   const [draftJap, setDraftJap] = useState(box.japText || "")
@@ -135,7 +138,8 @@ export function useJapTooltipController({
 
       setLiveOffset(null)
       if (Math.abs(finalX - session.startOffsetX) > 1 || Math.abs(finalY - session.startOffsetY) > 1) {
-        onUpdate?.(box.id, { japOffset: { x: finalX, y: finalY } })
+        // japOffset намеренно не сохраняется в БД: без Undo-шага и без dirty-флага.
+        ;(onUpdateTransient ?? onUpdate)?.(box.id, { japOffset: { x: finalX, y: finalY } })
       }
     }
 
@@ -145,7 +149,7 @@ export function useJapTooltipController({
       window.removeEventListener("mousemove", handleMouseMove)
       window.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [isDragging, box.id, onUpdate])
+  }, [isDragging, box.id, onUpdate, onUpdateTransient])
 
   const handleHeaderMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return
@@ -166,7 +170,7 @@ export function useJapTooltipController({
   const handleResetOffset = (e: React.MouseEvent) => {
     e.stopPropagation()
     setLiveOffset(null)
-    onUpdate?.(box.id, { japOffset: { x: 0, y: 0 } })
+    ;(onUpdateTransient ?? onUpdate)?.(box.id, { japOffset: { x: 0, y: 0 } })
   }
 
   const startEditingJap = (e?: React.MouseEvent) => {

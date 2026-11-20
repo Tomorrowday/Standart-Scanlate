@@ -5,6 +5,7 @@
 import os
 import threading
 from typing import Any, Dict, List, Optional, Tuple
+from fastapi import HTTPException
 from PIL import Image
 
 from database import get_db
@@ -41,7 +42,7 @@ def perform_ocr(req: OcrRequest):
             row = cursor.fetchone()
 
             if not row or not os.path.exists(row["file_path"]):
-                return {"success": False, "error": "Файл страницы не найден"}
+                raise HTTPException(status_code=404, detail="Файл страницы не найден")
 
             # Читаем блоки страницы, чтобы передать OCR соседние рамки (маскирование чужого текста)
             cursor.execute(
@@ -149,8 +150,10 @@ def perform_ocr(req: OcrRequest):
                 )
 
         return {"success": True, "text": text}
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 __all__ = ["perform_ocr", "_get_cached_page_image"]

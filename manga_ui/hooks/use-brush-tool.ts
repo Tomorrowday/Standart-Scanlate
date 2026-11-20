@@ -4,6 +4,7 @@
  */
 
 import { useRef, useState, useCallback, useEffect } from "react"
+import type { BrushMaskRect } from "@/lib/api/pages"
 
 export type BrushMode = "lama" | "white" | "black"
 
@@ -12,7 +13,7 @@ export interface UseBrushToolProps {
   brushSize: number
   brushMode: BrushMode
   imageSrc: string | null
-  onBrushClean?: (maskBase64: string, mode: BrushMode) => Promise<void>
+  onBrushClean?: (maskBase64: string, mode: BrushMode, maskRect?: BrushMaskRect) => Promise<void>
 }
 
 export interface UseBrushToolReturn {
@@ -41,6 +42,31 @@ export function useBrushTool({
   // Пока идёт мазок, ResizeObserver/resize не должны перезаписывать размер
   // холста: это мгновенно стирает рисуемый мазок.
   const isBrushPaintingRef = useRef(false)
+
+  // Bounding box текущего мазка в координатах экранного канваса.
+  // Позволяет отправлять на бэкенд только кроп маски, а не полноразмерный PNG.
+  const strokeBoundsRef = useRef<{
+    minX: number
+    minY: number
+    maxX: number
+    maxY: number
+  } | null>(null)
+
+  const extendStrokeBounds = useCallback(
+    (x: number, y: number) => {
+      const r = brushSize / 2 + 2
+      const b = strokeBoundsRef.current
+      if (!b) {
+        strokeBoundsRef.current = { minX: x - r, minY: y - r, maxX: x + r, maxY: y + r }
+        return
+      }
+      b.minX = Math.min(b.minX, x - r)
+      b.minY = Math.min(b.minY, y - r)
+      b.maxX = Math.max(b.maxX, x + r)
+      b.maxY = Math.max(b.maxY, y + r)
+    },
+    [brushSize]
+  )
 
   const syncBrushCanvasSize = useCallback(() => {
     const canvas = brushCanvasRef.current
@@ -92,6 +118,8 @@ export function useBrushTool({
 
   const handleBrushMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // Рисуем кистью только левой кнопкой.
+      if (e.button !== 0) return
       if (isBrushProcessing || !onBrushClean) return
       syncBrushCanvasSize()
       const canvas = brushCanvasRef.current
@@ -102,6 +130,8 @@ export function useBrushTool({
       isBrushPaintingRef.current = true
       setIsBrushPainting(true)
       const { x, y } = getCanvasCoords(e)
+      strokeBoundsRef.current = null
+      extendStrokeBounds(x, y)
 
       if (cursorRef.current) {
         cursorRef.current.style.display = "block"
@@ -122,7 +152,7 @@ export function useBrushTool({
       ctx.beginPath()
       ctx.moveTo(x, y)
     },
-    [isBrushProcessing, onBrushClean, syncBrushCanvasSize, getCanvasCoords, getBrushStrokeStyle, brushSize]
+    [isBrushProcessing, onBrushClean, syncBrushCanvasSize, getCanvasCoords, getBrushStrokeStyle, brushSize, extendStrokeBounds]
   )
 
   const handleBrushMouseMove = useCallback(
@@ -142,9 +172,10 @@ export function useBrushTool({
 
         ctx.lineTo(x, y)
         ctx.stroke()
+        extendStrokeBounds(x, y)
       }
     },
-    [getCanvasCoords, isBrushPainting]
+    [getCanvasCoords, isBrushPainting, extendStrokeBounds]
   )
 
   const handleBrushMouseUp = useCallback(async () => {
@@ -158,25 +189,56 @@ export function useBrushTool({
       return
     }
 
+    // Клик кистью до фактической загрузки картинки/канваса не должен давать Infinity.
+    if (
+      screenCanvas.width <= 0 ||
+      screenCanvas.height <= 0 ||
+      img.naturalWidth <= 0 ||
+      img.naturalHeight <= 0
+    ) {
+      console.warn("Кисть: канвас или изображение ещё не готовы")
+      isBrushPaintingRef.current = false
+      return
+    }
+
     setIsBrushProcessing(true)
 
     try {
+      const scaleX = img.naturalWidth / screenCanvas.width
+      const scaleY = img.naturalHeight / screenCanvas.height
+      if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY)) {
+        console.warn("Кисть: некорректный масштаб канваса", { scaleX, scaleY })
+        setIsBrushProcessing(false)
+        return
+      }
+
+      // Отправляем только кроп маски по bbox мазка (обычно ~200×200 вместо
+      // полноразмерного 4K PNG): меньше трафика, CPU и времени отклика.
+      const bounds = strokeBoundsRef.current
+      strokeBoundsRef.current = null
+      const pad = 2
+      const cropX = Math.max(0, Math.floor((bounds?.minX ?? 0) - pad))
+      const cropY = Math.max(0, Math.floor((bounds?.minY ?? 0) - pad))
+      const cropRight = Math.min(screenCanvas.width, Math.ceil((bounds?.maxX ?? screenCanvas.width) + pad))
+      const cropBottom = Math.min(screenCanvas.height, Math.ceil((bounds?.maxY ?? screenCanvas.height) + pad))
+      const cropW = Math.max(1, cropRight - cropX)
+      const cropH = Math.max(1, cropBottom - cropY)
+
+      const natX = Math.max(0, Math.min(img.naturalWidth - 1, Math.floor(cropX * scaleX)))
+      const natY = Math.max(0, Math.min(img.naturalHeight - 1, Math.floor(cropY * scaleY)))
+      const natW = Math.max(1, Math.min(img.naturalWidth - natX, Math.ceil(cropW * scaleX)))
+      const natH = Math.max(1, Math.min(img.naturalHeight - natY, Math.ceil(cropH * scaleY)))
+
       const offscreen = document.createElement("canvas")
-      offscreen.width = img.naturalWidth
-      offscreen.height = img.naturalHeight
+      offscreen.width = natW
+      offscreen.height = natH
       const oCtx = offscreen.getContext("2d")
 
       if (oCtx) {
-        oCtx.clearRect(0, 0, offscreen.width, offscreen.height)
-        const scaleX = img.naturalWidth / screenCanvas.width
-        const scaleY = img.naturalHeight / screenCanvas.height
+        oCtx.clearRect(0, 0, natW, natH)
+        oCtx.drawImage(screenCanvas, cropX, cropY, cropW, cropH, 0, 0, natW, natH)
 
-        oCtx.save()
-        oCtx.scale(scaleX, scaleY)
-        oCtx.drawImage(screenCanvas, 0, 0)
-        oCtx.restore()
-
-        const imgData = oCtx.getImageData(0, 0, offscreen.width, offscreen.height)
+        const imgData = oCtx.getImageData(0, 0, natW, natH)
         const d = imgData.data
 
         for (let i = 0; i < d.length; i += 4) {
@@ -198,7 +260,12 @@ export function useBrushTool({
         const sCtx = screenCanvas.getContext("2d")
         sCtx?.clearRect(0, 0, screenCanvas.width, screenCanvas.height)
 
-        await onBrushClean(maskBase64, brushMode)
+        await onBrushClean(maskBase64, brushMode, {
+          x: natX,
+          y: natY,
+          width: natW,
+          height: natH,
+        })
       }
     } catch (err) {
       console.error("Ошибка применения кисти:", err)

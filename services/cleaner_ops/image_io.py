@@ -2,6 +2,7 @@
 # Безопасное чтение/сохранение изображений с Unicode-путями и геометрия бабла
 
 import os
+import threading
 from typing import Tuple
 from pathlib import Path
 import cv2
@@ -29,6 +30,7 @@ def load_image_cv2(image_path: str) -> np.ndarray:
 
 def save_image_cv2(image_path: str, img: np.ndarray) -> bool:
     """Безопасное сохранение изображения на Windows с не-ASCII символами в пути."""
+    tmp_path = f"{image_path}.tmp.{threading.get_ident()}"
     try:
         Path(image_path).parent.mkdir(parents=True, exist_ok=True)
         ext = os.path.splitext(image_path)[1].lower()
@@ -36,12 +38,22 @@ def save_image_cv2(image_path: str, img: np.ndarray) -> bool:
             ext = ".png"
         success, encoded = cv2.imencode(ext, img)
         if success:
-            with open(image_path, "wb") as f:
+            # Пишем во временный файл и атомарно подменяем: параллельный
+            # GET /clean-image не прочитает обрезанный PNG, а сбой записи
+            # не уничтожит предыдущий скан.
+            with open(tmp_path, "wb") as f:
                 f.write(encoded)
+            os.replace(tmp_path, image_path)
             return True
         logger.error(f"imencode завершился с ошибкой для {image_path}")
     except Exception as e:
         logger.error(f"Ошибка сохранения изображения {image_path}: {e}")
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
     return False
 
 

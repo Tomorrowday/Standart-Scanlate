@@ -12,6 +12,7 @@ from services.dictionary_ops import (
     download_and_build_dictionaries,
     ensure_jp_dict_schema,
     get_dictionary_status as _get_db_dictionary_status,
+    is_dictionary_building as _is_dictionary_building,
     import_yomitan_zip,
 )
 
@@ -21,6 +22,7 @@ __all__ = [
     "ensure_jp_dict_schema",
     "import_yomitan_zip",
     "get_dictionary_status",
+    "is_dictionary_building",
     "download_and_build_dictionaries",
     "analyze_bubble_text",
     "invalidate_glossary_cache",
@@ -46,3 +48,8 @@ def get_dictionary_status() -> Dict[str, Any]:
     status = _get_db_dictionary_status()
     status["nlp"] = dict_engine.get_nlp_info()
     return status
+
+
+def is_dictionary_building() -> bool:
+    """Лёгкая проверка «идёт сборка словаря» без DDL и COUNT(*) по всей базе."""
+    return _is_dictionary_building()

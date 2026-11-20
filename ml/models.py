@@ -7,6 +7,7 @@
 
 from ml.models_ops import (
     AccurateLamaWrapper,
+    BrushMaskWrapper,
     HayaiOcrAdapter,
     MLManager,
     PaddleOcrVlAdapter,
@@ -26,6 +27,7 @@ __all__ = [
     "_get_device",
     "release_vram",
     "AccurateLamaWrapper",
+    "BrushMaskWrapper",
     "HayaiOcrAdapter",
     "PaddleOcrVlAdapter",
     "_create_ocr_engine",

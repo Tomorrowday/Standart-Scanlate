@@ -21,6 +21,16 @@ export interface UsePagePipelinesProps {
   globalSettings: TitleSettings
   setSelectedId: (id: string | null) => void
   saveBlocks: (refreshSpeakers?: boolean) => Promise<void>
+  saveBlocksExplicit: (
+    targetPageId: number,
+    blocksToSave: TextBlock[],
+    refreshSpeakers?: boolean
+  ) => Promise<void>
+  markDirty: () => void
+  isCurrentPage: (pageId: number) => boolean
+  applyBlocksForPage: (pageId: number, next: TextBlock[]) => void
+  recordCleanAction: () => void
+  discardLastSnapshot: () => void
   onPageStatusUpdate: (pageId: number, status: PageStatus, cleanPath?: string) => void
   setShowTypeset: (show: boolean) => void
   setViewMode: (mode: "original" | "clean") => void

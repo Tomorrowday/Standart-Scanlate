@@ -22,7 +22,7 @@ def get_project_tree(title_id: int):
         cursor.execute("SELECT * FROM titles WHERE id = ?", (title_id,))
         title_row = cursor.fetchone()
         if not title_row:
-            return {"success": False, "error": "Тайтл не найден"}
+            raise HTTPException(status_code=404, detail="Тайтл не найден")
 
         title = dict(title_row)
 

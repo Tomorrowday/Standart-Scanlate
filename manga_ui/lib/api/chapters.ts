@@ -10,6 +10,7 @@ export async function runTranslateChapter(chapterId: number): Promise<{
   success: boolean
   message: string
   updated_count?: number
+  updated_page_ids?: number[]
 }> {
   const res = await fetch(`${API_BASE_URL}/api/chapters/${chapterId}/translate`, {
     method: "POST",
@@ -60,6 +61,7 @@ export async function uploadChapterScript(
   message: string
   updated_count: number
   updated_speakers_count?: number
+  updated_page_ids?: number[]
   total_records: number
 }> {
   const formData = new FormData()
@@ -81,6 +83,7 @@ export async function pickAndImportChapterScript(chapterId: number): Promise<{
   file_used?: string
   updated_count?: number
   updated_speakers_count?: number
+  updated_page_ids?: number[]
   total_records?: number
 }> {
   const res = await fetch(`${API_BASE_URL}/api/chapters/${chapterId}/pick-and-import-dialogue`, {

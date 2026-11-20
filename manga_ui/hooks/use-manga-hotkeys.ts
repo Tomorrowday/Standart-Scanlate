@@ -6,25 +6,17 @@
  * Диспетчеризация нажатий вынесена в hotkey-dispatcher.ts
  */
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useRef } from "react"
 import type { TextBlock } from "@/lib/types"
-import {
-  type HotkeyConfig,
-  type HotkeyActionId,
-  DEFAULT_HOTKEYS,
-  HOTKEYS_UPDATED_EVENT,
-  loadHotkeys,
-  saveHotkeys,
-} from "@/lib/hotkeys"
+import { useHotkeysConfig } from "@/lib/hotkeys-store"
 import { dispatchMangaHotkey } from "./hotkey-dispatcher"
 
-export interface UseHotkeysConfigReturn {
-  hotkeys: HotkeyConfig
-  updateHotkey: (action: HotkeyActionId, patch: Partial<HotkeyConfig[HotkeyActionId]>) => void
-  resetHotkeys: () => void
-}
+export { useHotkeysConfig }
+export type { UseHotkeysConfigReturn } from "@/lib/hotkeys-store"
 
 export interface UseMangaHotkeysProps {
+  /** true, когда открыта модалка: фоновые хоткеи не обрабатываются. */
+  disabled?: boolean
   selectedId: string | null
   textBlocks: TextBlock[]
   defaultFontSize?: number
@@ -41,6 +33,7 @@ export interface UseMangaHotkeysProps {
   onDeleteBlock: (id: string) => void
   onMoveBlock: (id: string, direction: "up" | "down") => void
   onUpdateBlock: (id: string, patch: Partial<TextBlock>) => void
+  onCleanPage?: () => void
   onSpotClean?: (block: TextBlock, method: "auto" | "lama" | "white", deleteAfter?: boolean) => Promise<void>
   onBrushResize?: (delta: number) => void
   onChapterDetectAll?: () => void
@@ -50,102 +43,50 @@ export interface UseMangaHotkeysProps {
   onChapterImportJson?: () => void
 }
 
-export function useHotkeysConfig(): UseHotkeysConfigReturn {
-  const [hotkeys, setHotkeys] = useState<HotkeyConfig>(() => loadHotkeys())
-
-  useEffect(() => {
-    const sync = () => setHotkeys(loadHotkeys())
-    window.addEventListener(HOTKEYS_UPDATED_EVENT, sync)
-    window.addEventListener("storage", sync)
-    return () => {
-      window.removeEventListener(HOTKEYS_UPDATED_EVENT, sync)
-      window.removeEventListener("storage", sync)
-    }
-  }, [])
-
-  const updateHotkey = useCallback((action: HotkeyActionId, patch: Partial<HotkeyConfig[HotkeyActionId]>) => {
-    setHotkeys((prev) => {
-      const next = {
-        ...prev,
-        [action]: { ...prev[action], ...patch },
-      }
-      queueMicrotask(() => {
-        saveHotkeys(next)
-      })
-      return next
-    })
-  }, [])
-
-  const resetHotkeys = useCallback(() => {
-    const next = { ...DEFAULT_HOTKEYS }
-    setHotkeys(next)
-    queueMicrotask(() => {
-      saveHotkeys(next)
-    })
-  }, [])
-
-  return { hotkeys, updateHotkey, resetHotkeys }
-}
-
 export function useMangaHotkeys(props: UseMangaHotkeysProps): void {
   const { hotkeys } = useHotkeysConfig()
 
+  // Единственная подписка на window: актуальные пропсы и хоткеи читаем из ref,
+  // чтобы не переподписываться на каждый рендер (и на каждый тик состояния).
+  const propsRef = useRef(props)
+  propsRef.current = props
+  const hotkeysRef = useRef(hotkeys)
+  hotkeysRef.current = hotkeys
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const p = propsRef.current
       dispatchMangaHotkey(e, {
-        hotkeys,
-        selectedId: props.selectedId,
-        textBlocks: props.textBlocks,
-        defaultFontSize: props.defaultFontSize ?? 14,
-        onPrevPage: props.onPrevPage,
-        onNextPage: props.onNextPage,
-        onSave: props.onSave,
-        onUndo: props.onUndo,
-        onRedo: props.onRedo,
-        onToggleViewMode: props.onToggleViewMode,
-        onToggleTypeset: props.onToggleTypeset,
-        onToggleJapCheck: props.onToggleJapCheck,
-        onOcrBlock: props.onOcrBlock,
-        onSetClass: props.onSetClass,
-        onDeleteBlock: props.onDeleteBlock,
-        onMoveBlock: props.onMoveBlock,
-        onUpdateBlock: props.onUpdateBlock,
-        onSpotClean: props.onSpotClean,
-        onBrushResize: props.onBrushResize,
-        onChapterDetectAll: props.onChapterDetectAll,
-        onChapterCleanAll: props.onChapterCleanAll,
-        onChapterExportAll: props.onChapterExportAll,
-        onChapterExportJson: props.onChapterExportJson,
-        onChapterImportJson: props.onChapterImportJson,
+        hotkeys: hotkeysRef.current,
+        disabled: p.disabled,
+        selectedId: p.selectedId,
+        textBlocks: p.textBlocks,
+        defaultFontSize: p.defaultFontSize ?? 14,
+        onPrevPage: p.onPrevPage,
+        onNextPage: p.onNextPage,
+        onSave: p.onSave,
+        onUndo: p.onUndo,
+        onRedo: p.onRedo,
+        onToggleViewMode: p.onToggleViewMode,
+        onToggleTypeset: p.onToggleTypeset,
+        onToggleJapCheck: p.onToggleJapCheck,
+        onOcrBlock: p.onOcrBlock,
+        onSetClass: p.onSetClass,
+        onDeleteBlock: p.onDeleteBlock,
+        onMoveBlock: p.onMoveBlock,
+        onUpdateBlock: p.onUpdateBlock,
+        onCleanPage: p.onCleanPage,
+        onSpotClean: p.onSpotClean,
+        onBrushResize: p.onBrushResize,
+        onChapterDetectAll: p.onChapterDetectAll,
+        onChapterCleanAll: p.onChapterCleanAll,
+        onChapterExportAll: p.onChapterExportAll,
+        onChapterExportJson: p.onChapterExportJson,
+        onChapterImportJson: p.onChapterImportJson,
       })
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [
-    hotkeys,
-    props.selectedId,
-    props.textBlocks,
-    props.defaultFontSize,
-    props.onPrevPage,
-    props.onNextPage,
-    props.onSave,
-    props.onUndo,
-    props.onRedo,
-    props.onToggleViewMode,
-    props.onToggleTypeset,
-    props.onToggleJapCheck,
-    props.onOcrBlock,
-    props.onSetClass,
-    props.onDeleteBlock,
-    props.onMoveBlock,
-    props.onUpdateBlock,
-    props.onSpotClean,
-    props.onBrushResize,
-    props.onChapterDetectAll,
-    props.onChapterCleanAll,
-    props.onChapterExportAll,
-    props.onChapterExportJson,
-    props.onChapterImportJson,
-  ])
+  }, [])
 }

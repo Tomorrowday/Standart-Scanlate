@@ -4,7 +4,7 @@ from database import get_db
 from routers.pages_handlers.common import cleanup_other_pages_clean_backups
 
 
-def get_page_details(page_id: int):
+def get_page_details(page_id: int, cleanup_backups: bool = True):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -24,7 +24,9 @@ def get_page_details(page_id: int):
         raise HTTPException(status_code=404, detail="Страница не найдена")
 
     page_data = dict(row)
-    if page_data.get("file_path"):
+    # Пакетный экспорт запрашивает детали каждой страницы и не должен
+    # удалять undo-бэкап клина открытой сейчас страницы.
+    if cleanup_backups and page_data.get("file_path"):
         cleanup_other_pages_clean_backups(str(page_data["file_path"]))
 
     if page_data.get("clean_path") and not os.path.exists(page_data["clean_path"]):

@@ -32,6 +32,9 @@ export interface BubbleInlineEditorProps {
     options?: ReflowOptions
   ) => BubbleReflowedState
   onUpdate?: (id: string, patch: Partial<TextBlock>) => void
+  onUpdateTransient?: (id: string, patch: Partial<TextBlock>) => void
+  getHistoryDepth?: () => number
+  onTruncateHistory?: (depth: number) => void
   onClose: () => void
 }
 
@@ -52,6 +55,9 @@ export function BubbleInlineEditor({
   autoOvalBubble = true,
   computeReflowedState,
   onUpdate,
+  onUpdateTransient,
+  getHistoryDepth,
+  onTruncateHistory,
   onClose,
 }: BubbleInlineEditorProps) {
   const editor = useBubbleInlineEditor({
@@ -63,6 +69,9 @@ export function BubbleInlineEditor({
     autoOvalBubble,
     computeReflowedState,
     onUpdate,
+    onUpdateTransient,
+    getHistoryDepth,
+    onTruncateHistory,
     onClose,
   })
 

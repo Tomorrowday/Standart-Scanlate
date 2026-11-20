@@ -3,13 +3,13 @@
 
 import json
 import re
-from typing import Dict
+from typing import Any, Dict
 
 from database import get_db, db_session
 from logger import logger
 
 
-def import_chapter_dialogue_payload(chapter_id: int, file_bytes: bytes) -> Dict[str, int]:
+def import_chapter_dialogue_payload(chapter_id: int, file_bytes: bytes) -> Dict[str, Any]:
     text = file_bytes.decode("utf-8").strip()
 
     if "```" in text:
@@ -37,7 +37,7 @@ def import_chapter_dialogue_payload(chapter_id: int, file_bytes: bytes) -> Dict[
 
         cur.execute(
             """
-            SELECT tb.id, tb.rus_text, tb.speaker, tb.order_index, tb.class_id, tb.shape, tb.font_size, p.page_number
+            SELECT tb.id, tb.page_id, tb.rus_text, tb.speaker, tb.order_index, tb.class_id, tb.shape, tb.font_size, p.page_number
             FROM text_blocks tb
             JOIN pages p ON p.id = tb.page_id
             WHERE p.chapter_id = ?
@@ -56,12 +56,16 @@ def import_chapter_dialogue_payload(chapter_id: int, file_bytes: bytes) -> Dict[
 
     updated_count = 0
     updated_speakers_count = 0
+    updated_page_ids: set[int] = set()
 
     with db_session() as cur_session:
         for item in dialogues:
-            key_id = str(item.get("id", "")).strip()
-            ru_text = item.get("ru", "").strip()
-            imported_speaker = item.get("speaker", "").strip()
+            if not isinstance(item, dict):
+                continue
+            # LLM часто возвращает null для пустых/SFX-реплик: .strip() у None падал.
+            key_id = str(item.get("id") or "").strip()
+            ru_text = str(item.get("ru") or "").strip()
+            imported_speaker = str(item.get("speaker") or "").strip()
 
             if not key_id or (not ru_text and not imported_speaker):
                 continue
@@ -109,15 +113,20 @@ def import_chapter_dialogue_payload(chapter_id: int, file_bytes: bytes) -> Dict[
                 (final_ru, final_spk, new_shape, new_status, real_block_id)
             )
             updated_count += 1
+            if final_ru:
+                updated_page_ids.add(int(target_block["page_id"]))
 
-        cur_session.execute(
-            """
-            UPDATE pages 
-            SET status = 'translated' 
-            WHERE chapter_id = ? AND status != 'done'
-            """,
-            (chapter_id,)
-        )
+        # Статус `translated` — только страницам, куда реально записан перевод.
+        if updated_page_ids:
+            placeholders = ",".join("?" for _ in updated_page_ids)
+            cur_session.execute(
+                f"""
+                UPDATE pages
+                SET status = 'translated'
+                WHERE id IN ({placeholders}) AND status != 'done'
+                """,
+                tuple(updated_page_ids)
+            )
 
     logger.info(
         f"Импорт главы {chapter_id}: обновлено реплик: {updated_count}, спикеров: {updated_speakers_count}"
@@ -126,5 +135,6 @@ def import_chapter_dialogue_payload(chapter_id: int, file_bytes: bytes) -> Dict[
     return {
         "updated_count": updated_count,
         "updated_speakers_count": updated_speakers_count,
+        "updated_page_ids": sorted(updated_page_ids),
         "total_records": len(dialogues),
     }

@@ -3,7 +3,7 @@
 
 import { useRef, useCallback } from "react"
 import type { PageItem, PageStatus, TextBlock, TitleSettings } from "@/lib/types"
-import { mapDbBlockToTextBlock, sortBlocksMangaOrder } from "@/lib/typeset"
+import { insertBlockInMangaOrder, mapDbBlockToTextBlock } from "@/lib/typeset"
 import { getPageDetails, getPageBlocks, runPageAutoDetect } from "@/lib/api"
 
 export interface UsePageNavigationProps {
@@ -123,6 +123,10 @@ export function usePageNavigation({
                 activeSettings.detect_conf,
                 false
               )
+              // Упавший детект не должен помечать raw-страницу как detected.
+              if (!detectRes || detectRes.success === false) {
+                throw new Error(detectRes?.error || "Ошибка детекции")
+              }
               const detectedBoxes: TextBlock[] = (detectRes?.boxes || []).map((box: any) => {
                 const mapped = mapDbBlockToTextBlock(box)
                 return {
@@ -144,7 +148,12 @@ export function usePageNavigation({
               // сохраняем пользовательские рамки вместе с найденными
               const userAddedWhileDetecting = textBlocksRef.current
               if (userAddedWhileDetecting.length > 0) {
-                const merged = sortBlocksMangaOrder([...detectedBoxes, ...userAddedWhileDetecting])
+                // Вставляем пользовательские рамки по одной, чтобы сохранить
+                // умный порядок чтения gutter_cutter, а не пересортировывать всё заново.
+                let merged = detectedBoxes
+                for (const userBlock of userAddedWhileDetecting) {
+                  merged = insertBlockInMangaOrder(merged, userBlock)
+                }
                 setNewPageBlocks(merged)
                 isDirtyRef.current = true
                 await saveBlocksExplicit(page.id, merged, false)
@@ -152,7 +161,10 @@ export function usePageNavigation({
                 setNewPageBlocks(detectedBoxes)
                 if (detectedBoxes[0]) setSelectedId(detectedBoxes[0].id)
               }
-              onPageStatusUpdate(page.id, "detected")
+              onPageStatusUpdate(
+                page.id,
+                ((detectRes as any)?.page_status as PageStatus) || "detected"
+              )
             } finally {
               setIsDetecting?.(false)
             }

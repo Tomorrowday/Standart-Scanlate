@@ -17,6 +17,7 @@ from services.dictionary import (
     analyze_bubble_text,
     invalidate_glossary_cache,
     get_dictionary_status,
+    is_dictionary_building,
     download_and_build_dictionaries,
     dict_engine,
 )
@@ -47,8 +48,9 @@ def analyze_bubble_endpoint(req: DictAnalyzeRequest):
         title_id=req.title_id,
         nlp_mode=mode,
     )
-    status = get_dictionary_status()
-    is_building = bool(status.get("build_progress", {}).get("is_building"))
+    # O(1)-флаг из памяти: раньше на каждый бабл делались два COUNT(*) по 300k
+    # строк, DDL под глобальным lock и сканирование папки .zip.
+    is_building = is_dictionary_building()
     return {
         "success": True,
         "title_id": req.title_id,

@@ -14,6 +14,7 @@ import {
   formatKeyEvent,
 } from "@/lib/hotkeys"
 import { useHotkeysConfig } from "@/hooks/use-manga-hotkeys"
+import { openUiLayer } from "@/lib/ui-layer-store"
 
 export interface HotkeysModalProps {
   onClose: () => void
@@ -37,6 +38,9 @@ export function HotkeysModal({ onClose }: HotkeysModalProps) {
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Пока модалка открыта, глобальные хоткеи страницы не должны срабатывать.
+  useEffect(() => openUiLayer(), [])
 
   useEffect(() => {
     const handleGlobalKey = (e: KeyboardEvent) => {

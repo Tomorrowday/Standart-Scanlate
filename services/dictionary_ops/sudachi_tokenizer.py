@@ -22,11 +22,14 @@ class SudachiTokenizerMixin:
     _sudachi_split_mode: Any
 
     def _tokenize_with_sudachi(self, segment: str) -> List[TokenSpanOut]:
-        if self._sudachi_tokenizer is None:
-            return self._tokenize_fallback_regex(segment)
-
+        # Ссылки на токенизатор и режим берём строго под локом: параллельный
+        # unload_models() может обнулить их между проверкой и обращением.
         with self._nlp_lock:
-            morphemes = list(self._sudachi_tokenizer.tokenize(segment, self._sudachi_split_mode))
+            tokenizer = self._sudachi_tokenizer
+            if tokenizer is None:
+                return self._tokenize_fallback_regex(segment)
+            split_mode = self._sudachi_split_mode
+            morphemes = list(tokenizer.tokenize(segment, split_mode))
 
         spans: List[TokenSpanOut] = []
         i = 0

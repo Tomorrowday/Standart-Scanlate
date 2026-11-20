@@ -3,7 +3,7 @@
 // авто-старт при активности, heartbeat раз в 20 сек и авто-пауза после минуты бездействия.
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { getChapterTimerStatus, startChapterTimer, stopChapterTimer, API_BASE_URL } from "@/lib/api"
+import { getChapterTimerStatus, startChapterTimer, stopChapterTimer, API_BASE_URL, ApiError } from "@/lib/api"
 
 export interface UseChapterTimerReturn {
   isTimerRunning: boolean
@@ -30,6 +30,11 @@ export function useChapterTimer(currentChapterId: number | null): UseChapterTime
   const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Поколение сессии: защищает от «воскрешения» таймера запоздавшим heartbeat
   const stopGenerationRef = useRef(0)
+  // Ручная пауза (кнопка «Стоп») — в отличие от авто-паузы по бездействию,
+  // активность мыши НЕ должна перезапускать таймер.
+  const isManuallyPausedRef = useRef(false)
+  // Глава удалена на бэкенде — прекращаем heartbeat без спама ошибок.
+  const chapterGoneRef = useRef(false)
 
   chapterIdRef.current = currentChapterId
 
@@ -43,7 +48,7 @@ export function useChapterTimer(currentChapterId: number | null): UseChapterTime
   // Запуск/подтверждение активности (heartbeat) на бэкенде
   const pingTimer = useCallback(async () => {
     const chapterId = chapterIdRef.current
-    if (!chapterId) return
+    if (!chapterId || chapterGoneRef.current) return
     const generation = stopGenerationRef.current
     try {
       const res = await startChapterTimer(chapterId)
@@ -54,6 +59,14 @@ export function useChapterTimer(currentChapterId: number | null): UseChapterTime
       setIsTimerRunning(res.is_running)
       setTimerSeconds(res.total_seconds)
     } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        // Главу удалили (в т.ч. из другой вкладки): тихо останавливаемся,
+        // иначе heartbeat спамит 404 каждые 2 секунды при движении мыши.
+        chapterGoneRef.current = true
+        isRunningRef.current = false
+        setIsTimerRunning(false)
+        return
+      }
       console.warn("Не удалось отправить heartbeat таймера:", e)
     }
   }, [])
@@ -82,6 +95,10 @@ export function useChapterTimer(currentChapterId: number | null): UseChapterTime
 
   // Подписка на активность пользователя и авто-старт сессии
   useEffect(() => {
+    // Смена главы снимает ручную паузу и признак удалённой главы.
+    isManuallyPausedRef.current = false
+    chapterGoneRef.current = false
+
     if (!currentChapterId) {
       clearIdleTimeout()
       isRunningRef.current = false
@@ -98,6 +115,10 @@ export function useChapterTimer(currentChapterId: number | null): UseChapterTime
     const reportActivity = () => {
       lastActivityTimeRef.current = Date.now()
       scheduleIdleTimeout()
+      // После ручного «Стоп» или удаления главы активность не перезапускает
+      // таймер. Авто-пауза по 60с бездействия сюда не относится — там
+      // isManuallyPausedRef остаётся false, и таймер сам возобновляется.
+      if (isManuallyPausedRef.current || chapterGoneRef.current) return
       if (!isRunningRef.current) {
         void pingTimer()
       }
@@ -119,7 +140,13 @@ export function useChapterTimer(currentChapterId: number | null): UseChapterTime
         setIsTimerRunning(res.is_running)
         setTimerSeconds(res.total_seconds)
       })
-      .catch((e) => console.warn("Не удалось получить статус таймера:", e))
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 404) {
+          chapterGoneRef.current = true
+          return
+        }
+        console.warn("Не удалось получить статус таймера:", e)
+      })
       .finally(() => {
         if (!cancelled) reportActivity()
       })
@@ -159,11 +186,13 @@ export function useChapterTimer(currentChapterId: number | null): UseChapterTime
       window.removeEventListener("pagehide", handlePageHide)
 
       // При смене главы/размонтировании закрываем сессию старой главы
-      if (isRunningRef.current) {
+      if (isRunningRef.current && !chapterGoneRef.current) {
         isRunningRef.current = false
-        stopChapterTimer(chapterId).catch((e) =>
+        stopChapterTimer(chapterId).catch((e) => {
+          // 404 — главу удалили до остановки таймера, это ожидаемо.
+          if (e instanceof ApiError && e.status === 404) return
           console.warn("Не удалось остановить таймер предыдущей главы:", e)
-        )
+        })
       }
     }
   }, [currentChapterId, clearIdleTimeout, pingTimer, scheduleIdleTimeout])
@@ -189,6 +218,8 @@ export function useChapterTimer(currentChapterId: number | null): UseChapterTime
   }, [isTimerRunning])
 
   const handleStartTimer = useCallback(async () => {
+    isManuallyPausedRef.current = false
+    chapterGoneRef.current = false
     lastActivityTimeRef.current = Date.now()
     scheduleIdleTimeout()
     await pingTimer()
@@ -198,6 +229,8 @@ export function useChapterTimer(currentChapterId: number | null): UseChapterTime
     clearIdleTimeout()
     const chapterId = chapterIdRef.current
     stopGenerationRef.current += 1
+    // Ручная пауза: движение мыши больше не должно перезапускать таймер.
+    isManuallyPausedRef.current = true
     isRunningRef.current = false
     setIsTimerRunning(false)
     if (!chapterId) return
@@ -205,6 +238,10 @@ export function useChapterTimer(currentChapterId: number | null): UseChapterTime
       const res = await stopChapterTimer(chapterId)
       if (res.success) setTimerSeconds(res.total_seconds)
     } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        chapterGoneRef.current = true
+        return
+      }
       console.error("Ошибка остановки таймера:", e)
     }
   }, [clearIdleTimeout])

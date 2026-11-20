@@ -6,17 +6,16 @@
 import { useState, useRef, useEffect, useMemo } from "react"
 import type { TextBlock } from "@/lib/types"
 import {
-  layoutBubbleTextLines,
+  computeBubbleDisplayLines,
   reflowFromManualLines,
   joinLinesRemovingSoftHyphens,
   hasManualLineBreaks,
+  hasModifiedLineBreaks,
   stripForcedSingleLineMarker,
-  projectLinesToOriginalCase,
   usePageImageMetrics,
+  useFontsEpoch,
   FORCED_SINGLE_LINE_MARKER,
 } from "@/lib/typeset"
-
-let cardPreviewCanvas: HTMLCanvasElement | null = null
 
 export interface UseCardRusEditorProps {
   block: TextBlock
@@ -51,7 +50,9 @@ export function useCardRusEditor({
 }: UseCardRusEditorProps): UseCardRusEditorReturn {
   const [isFocusedRus, setIsFocusedRus] = useState(false)
   const [localRusText, setLocalRusText] = useState(() => stripForcedSingleLineMarker(block.rusText))
-  const [fontsLoadedTick, setFontsLoadedTick] = useState(0)
+  // Эпоха загрузки шрифтов: меняется при догрузке манга-шрифта, кэши вёрстки
+  // при этом очищаются, а renderedLines пересчитывается.
+  const fontsEpoch = useFontsEpoch()
 
   const { naturalW, naturalH } = usePageImageMetrics()
 
@@ -64,78 +65,38 @@ export function useCardRusEditor({
   const wasManualBeforeEditRef = useRef(false)
   const hadForcedSingleLineRef = useRef(false)
   const userTouchedBreaksRef = useRef(false)
+  // Число строк на предыдущем onChange и факт Enter/Backspace по переносам:
+  // позволяет отличить перенос слова между строками от простой правки текста.
+  const prevLineCountRef = useRef(0)
+  const hadBreakEditRef = useRef(false)
 
-  // Метрики шрифта нужно пересчитать после его реальной загрузки,
-  // иначе первая отрисовка карточки считается по запасному шрифту.
+  // Внешнее изменение текста (Undo / Redo / смена блока) сбрасывает защиту
+  // и ручную правку переносов; собственные onchange-эмиссии не трогаем.
   useEffect(() => {
-    if (typeof document !== "undefined" && document.fonts) {
-      document.fonts.ready.then(() => {
-        setFontsLoadedTick((t) => t + 1)
-      })
+    const next = block.rusText || ""
+    if (next !== lastEmittedStorageRef.current) {
+      userTouchedBreaksRef.current = false
+      hadBreakEditRef.current = false
+      prevLineCountRef.current = 0
     }
-  }, [block.fontFamily])
-
-  // Внешнее изменение текста (Undo / Redo / смена блока) сбрасывает защиту.
-  useEffect(() => {
-    lastEmittedStorageRef.current = block.rusText || ""
+    lastEmittedStorageRef.current = next
   }, [block.rusText])
 
   const renderedLines = useMemo(() => {
     if (typeof document === "undefined") return (block.rusText || "").split(/\r?\n/)
-    if (!cardPreviewCanvas) {
-      cardPreviewCanvas = document.createElement("canvas")
-    }
-    const ctx = cardPreviewCanvas.getContext("2d")
-    const raw = (block.rusText || "").trim()
-    if (!ctx || !raw) return []
+    if (!(block.rusText || "").trim()) return []
 
-    const baseSize = block.fontSize || defaultFontSize
-    const masterFontSize = Math.round(baseSize * (naturalH / 1200))
-    const masterBoxPixelW = block.width * naturalW
-    const masterBoxPixelH = block.height * naturalH
-    const currentFont = block.fontFamily || "v_CCFaceFront"
-
-    const displayText = block.isUppercase ? raw.toUpperCase() : raw
-
-    const res = layoutBubbleTextLines(
-      ctx,
-      displayText,
-      masterBoxPixelW,
-      masterBoxPixelH,
-      masterFontSize,
-      currentFont,
-      block.shape || "rect",
-      block.paddingMode || "safe",
-      block.isBold,
-      block.isItalic,
-      block.minHyphens !== false
+    const display = computeBubbleDisplayLines(
+      block,
+      { naturalW, naturalH },
+      defaultFontSize,
+      block.width,
+      block.height
     )
-
-    if (block.isUppercase) {
-      const rawForEdit = raw.split(FORCED_SINGLE_LINE_MARKER).join("")
-      const projected = projectLinesToOriginalCase(rawForEdit, res.lines)
-      if (projected && projected.length > 0) {
-        return projected
-      }
-      const rawRes = layoutBubbleTextLines(
-        ctx,
-        raw,
-        masterBoxPixelW,
-        masterBoxPixelH,
-        masterFontSize,
-        currentFont,
-        block.shape || "rect",
-        block.paddingMode || "safe",
-        block.isBold,
-        block.isItalic,
-        block.minHyphens !== false
-      )
-      return [...rawRes.lines]
-    }
 
     // Маркер однострочности НЕ добавляем: в textarea должен быть только
     // чистый видимый текст, иначе Backspace удаляет невидимый \u2060.
-    return [...res.lines]
+    return [...display.editableLines]
   }, [
     block.rusText,
     block.width,
@@ -151,7 +112,7 @@ export function useCardRusEditor({
     defaultFontSize,
     naturalW,
     naturalH,
-    fontsLoadedTick,
+    fontsEpoch,
   ])
 
   useEffect(() => {
@@ -162,6 +123,8 @@ export function useCardRusEditor({
           : stripForcedSingleLineMarker(block.rusText)
       setLocalRusText(displayStr)
       snapshotLinesRef.current = [...renderedLines]
+      prevLineCountRef.current = renderedLines.length
+      hadBreakEditRef.current = false
     }
   }, [renderedLines, block.rusText, isFocusedRus])
 
@@ -207,6 +170,8 @@ export function useCardRusEditor({
     wasManualBeforeEditRef.current = hasManualLineBreaks(block.rusText)
     hadForcedSingleLineRef.current = Boolean(block.rusText?.includes(FORCED_SINGLE_LINE_MARKER))
     userTouchedBreaksRef.current = false
+    hadBreakEditRef.current = false
+    prevLineCountRef.current = snapshotLinesRef.current.length
   }
 
   /**
@@ -216,9 +181,16 @@ export function useCardRusEditor({
    */
   const buildRusStorageText = (value: string) => {
     const editedLineCount = value.split(/\r?\n/).length
-    if (editedLineCount !== snapshotLinesRef.current.length) {
-      userTouchedBreaksRef.current = true
-    }
+    // Сравниваем распределение слов по строкам, а не только их количество:
+    // иначе перенос слова между строками при том же числе строк терялся.
+    userTouchedBreaksRef.current = hasModifiedLineBreaks(
+      snapshotLinesRef.current,
+      value,
+      prevLineCountRef.current,
+      hadBreakEditRef.current
+    )
+    if (editedLineCount !== prevLineCountRef.current) hadBreakEditRef.current = true
+    prevLineCountRef.current = editedLineCount
 
     return reflowFromManualLines(snapshotLinesRef.current, value, {
       wasManualBeforeEdit: wasManualBeforeEditRef.current,
@@ -231,9 +203,6 @@ export function useCardRusEditor({
   // Никакого preventDefault и пересчёта текста здесь быть не должно.
   const handleRusKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     e.stopPropagation()
-    if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
-      userTouchedBreaksRef.current = true
-    }
   }
 
   // Живое сохранение: пользователь ставит перенос — скан сразу перерисовывается,

@@ -1,7 +1,7 @@
 // manga_ui/hooks/use-manga-page-state.ts
 // Состояние активной страницы (обновления статуса) и список известных спикеров
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef } from "react"
 import type { PageItem, PageStatus } from "@/lib/types"
 import { getPageSpeakers } from "@/lib/api"
 
@@ -16,6 +16,8 @@ export interface UseMangaPageStateProps {
   setChapterPages: React.Dispatch<React.SetStateAction<PageItem[]>>
   setViewMode: (mode: "original" | "clean") => void
   setCleanCacheBuster: (value: number) => void
+  /** Текущая открытая страница — чтобы не трогать viewMode чужой страницы. */
+  currentPageId?: number | null
 }
 
 export interface UseMangaPageStateReturn {
@@ -30,14 +32,24 @@ export function useMangaPageState({
   setChapterPages,
   setViewMode,
   setCleanCacheBuster,
+  currentPageId = null,
 }: UseMangaPageStateProps): UseMangaPageStateReturn {
   const [knownSpeakers, setKnownSpeakers] = useState<string[]>([])
   const [activePageUpdate, setActivePageUpdate] = useState<PageStatusUpdate | null>(null)
 
+  const currentPageIdRef = useRef<number | null>(currentPageId)
+  currentPageIdRef.current = currentPageId
+  // Отсекает устаревшие ответы спикеров при быстром переключении страниц.
+  const speakersReqSeqRef = useRef(0)
+
   const refreshSpeakersList = useCallback(async (pageId: number) => {
+    const seq = ++speakersReqSeqRef.current
     try {
       const speakers = await getPageSpeakers(pageId)
-      if (speakers?.length) setKnownSpeakers(speakers)
+      if (seq !== speakersReqSeqRef.current) return
+      // Пустой список тоже применяем: иначе при переходе на тайтл без
+      // персонажей остаются спикеры предыдущей страницы.
+      setKnownSpeakers(speakers || [])
     } catch (e) {
       console.error("Ошибка спикеров:", e)
     }
@@ -66,7 +78,9 @@ export function useMangaPageState({
           : p
       )
     )
-    if (cleanPath !== undefined) {
+    // Переключаем viewMode и сбрасываем кэш скана только у ОТКРЫТОЙ страницы:
+    // иначе пакетный клин чужой страницы мигает текущей и сбрасывает её в original.
+    if (cleanPath !== undefined && pageId === currentPageIdRef.current) {
       setCleanCacheBuster(Date.now())
       setViewMode(cleanPath ? "clean" : "original")
     }

@@ -19,6 +19,10 @@
    - font_sfx TEXT DEFAULT 'v_Mighty Zeo 2.0'
    - lama_downscale INTEGER DEFAULT 0
    - export_format TEXT DEFAULT 'png' ('png', 'webp', 'avif')
+   - brush_model TEXT DEFAULT 'opencv' (имя модели weights/brush/*.pt или 'opencv')
+   - brush_threshold REAL DEFAULT 0.5
+   - brush_extra_dilate INTEGER DEFAULT 0
+   - brush_max_side INTEGER DEFAULT 512 (должен совпадать с imgsz обучения)
 
 2. titles:
    - id INTEGER PRIMARY KEY AUTOINCREMENT
@@ -133,22 +137,33 @@ def init_db():
                 lama_downscale INTEGER DEFAULT 0,
                 show_sfx INTEGER DEFAULT 0,
                 dict_nlp_mode TEXT DEFAULT 'auto',
-                export_format TEXT DEFAULT 'png'
+                export_format TEXT DEFAULT 'png',
+                brush_model TEXT DEFAULT 'opencv',
+                brush_threshold REAL DEFAULT 0.5,
+                brush_extra_dilate INTEGER DEFAULT 0,
+                brush_max_side INTEGER DEFAULT 512
             )
         ''')
 
-        # Безопасные миграции глобальных настроек для старых баз
+        # Безопасные миграции глобальных настроек для старых баз:
+        # колонки добавляем только после проверки PRAGMA table_info.
+        cursor.execute("PRAGMA table_info(global_settings)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
         for col_def in [
             "lama_downscale INTEGER DEFAULT 0",
             "show_sfx INTEGER DEFAULT 0",
             "dict_nlp_mode TEXT DEFAULT 'auto'",
             "ocr_model TEXT DEFAULT 'manga-ocr-base'",
             "export_format TEXT DEFAULT 'png'",
+            "brush_model TEXT DEFAULT 'opencv'",
+            "brush_threshold REAL DEFAULT 0.5",
+            "brush_extra_dilate INTEGER DEFAULT 0",
+            "brush_max_side INTEGER DEFAULT 512",
         ]:
-            try:
-                cursor.execute(f"ALTER TABLE global_settings ADD COLUMN {col_def}")
-            except Exception:
-                pass
+            col_name = col_def.split()[0]
+            if col_name in existing_cols:
+                continue
+            cursor.execute(f"ALTER TABLE global_settings ADD COLUMN {col_def}")
 
         # Гарантируем единственную строку настроек с id=1
         cursor.execute("SELECT COUNT(*) FROM global_settings WHERE id = 1")
@@ -157,8 +172,9 @@ def init_db():
                 INSERT INTO global_settings (
                     id, default_font_size, detector_model, clean_model, ocr_model, detect_conf,
                     auto_oval_bubble, default_padding, default_hyphenation,
-                    font_bubble, font_thought, font_sfx, lama_downscale, show_sfx, dict_nlp_mode, export_format
-                ) VALUES (1, 14, 'yolo_manga.pt', 'anime-manga-big-lama.pt', 'manga-ocr-base', 0.25, 1, 'safe', 1, 'v_CCFaceFront', 'v_CCFaceFront', 'v_Mighty Zeo 2.0', 0, 0, 'auto', 'png')
+                    font_bubble, font_thought, font_sfx, lama_downscale, show_sfx, dict_nlp_mode,
+                    export_format, brush_model, brush_threshold, brush_extra_dilate, brush_max_side
+                ) VALUES (1, 14, 'yolo_manga.pt', 'anime-manga-big-lama.pt', 'manga-ocr-base', 0.25, 1, 'safe', 1, 'v_CCFaceFront', 'v_CCFaceFront', 'v_Mighty Zeo 2.0', 0, 0, 'auto', 'png', 'opencv', 0.5, 0, 512)
             ''')
 
         # Убираем сломанный простой lama, чтобы LaMa всегда был доступен
@@ -268,6 +284,13 @@ def init_db():
                 FOREIGN KEY (title_id) REFERENCES titles(id) ON DELETE CASCADE
             )
         ''')
+
+        # Индексы для JOIN/CASCADE и выборок по странице/главе.
+        # Только CREATE INDEX IF NOT EXISTS — безопасно для живой БД.
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_chapters_title ON chapters(title_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_pages_chapter ON pages(chapter_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_text_blocks_page ON text_blocks(page_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_glossary_title ON glossary(title_id)")
 
         # Чистим осиротевшие записи: каскадная страховка
         cursor.execute("DELETE FROM text_blocks WHERE page_id NOT IN (SELECT id FROM pages)")

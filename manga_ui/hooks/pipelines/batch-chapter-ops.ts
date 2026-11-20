@@ -31,12 +31,14 @@ export interface BatchChapterOpsContext {
   fileInputRef: { current: HTMLInputElement | null }
   onPageStatusUpdate?: BatchChapterActionsProps["onPageStatusUpdate"]
   onCompleteBatch?: () => void
-  onRefreshCurrent: () => void
+  onRefreshCurrent: (action?: BatchAction) => void
 }
 
 /** Экспорт одной страницы: при необходимости авто-клин, затем запекание PNG и сохранение. */
 export async function exportBakePageOp(ctx: BatchChapterOpsContext, page: PageItem): Promise<void> {
-  const fresh = (await getPageDetails(page.id)) || page
+  // Не трогаем undo-бэкапы клина: экспорт всех страниц не должен ломать
+  // Ctrl+Z на открытой пользователем странице.
+  const fresh = (await getPageDetails(page.id, false)) || page
 
   const dbBlocks = await getPageBlocks(page.id)
   const blocks: TextBlock[] = dbBlocks.map((b: any) => mapDbBlockToTextBlock(b))
@@ -103,11 +105,16 @@ export async function importChapterScriptOp(ctx: BatchChapterOpsContext, isRunni
     }
 
     if (res.success) {
-      ctx.pages.forEach((p) => {
-        if (p.status !== "done") {
-          ctx.onPageStatusUpdate?.(p.id, "translated")
-        }
-      })
+      // Обновляем только страницы, куда действительно попал перевод.
+      // Старый бэкенд без updated_page_ids — статусы не трогаем.
+      if (Array.isArray(res.updated_page_ids)) {
+        res.updated_page_ids.forEach((pageId) => {
+          const page = ctx.pages.find((p) => p.id === pageId)
+          if (page && page.status !== "done") {
+            ctx.onPageStatusUpdate?.(pageId, "translated")
+          }
+        })
+      }
 
       const msg = [
         res.auto_found ? "⚡ Файл найден автоматически в папке главы!" : null,
@@ -122,12 +129,15 @@ export async function importChapterScriptOp(ctx: BatchChapterOpsContext, isRunni
       ctx.setJustFinished("script-import")
       setTimeout(() => ctx.setJustFinished(null), 2000)
       ctx.onCompleteBatch?.()
-      ctx.onRefreshCurrent()
+      ctx.onRefreshCurrent("script-import")
     } else {
       ctx.fileInputRef.current?.click()
     }
   } catch (err) {
-    console.warn("Диалог бэкенда не сработал, открываем браузерный выбор файла:", err)
+    // Не глотаем ошибку: если файл в папке битый, пользователь должен увидеть
+    // причину, а затем уже решить, выбирать ли другой файл вручную.
+    console.error("Автоматический импорт скрипта не удался:", err)
+    alert("Не удалось импортировать скрипт главы:\n" + String(err))
     ctx.fileInputRef.current?.click()
   } finally {
     ctx.setProgress(null)
@@ -147,11 +157,14 @@ export async function importChapterScriptFileOp(
   ctx.setProgress({ action: "script-import", done: 0, total: 1, label: "Importing translations & speakers..." })
   try {
     const res = await uploadChapterScript(ctx.chapterId, file)
-    ctx.pages.forEach((p) => {
-      if (p.status !== "done") {
-        ctx.onPageStatusUpdate?.(p.id, "translated")
-      }
-    })
+    if (Array.isArray(res.updated_page_ids)) {
+      res.updated_page_ids.forEach((pageId) => {
+        const page = ctx.pages.find((p) => p.id === pageId)
+        if (page && page.status !== "done") {
+          ctx.onPageStatusUpdate?.(pageId, "translated")
+        }
+      })
+    }
 
     const msg = [
       `Успешно импортировано реплик: ${res.updated_count}`,
@@ -169,6 +182,6 @@ export async function importChapterScriptFileOp(
     ctx.setProgress(null)
     if (ctx.fileInputRef.current) ctx.fileInputRef.current.value = ""
     ctx.onCompleteBatch?.()
-    ctx.onRefreshCurrent()
+    ctx.onRefreshCurrent("script-import")
   }
 }

@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any, Tuple
 
 from logger import logger
 from services.dictionary_ops.constants import SURU_SURFACE_PREFIXES
-from services.dictionary_ops.db_builder import dict_db_connection
+from services.dictionary_ops.jp_dict_db import get_readonly_dict_connection
 from services.dictionary_ops.deinflector import deinflect_candidates
 from services.dictionary_ops.models import DictSense
 from services.dictionary_ops.subword_decomposer import SubwordDecomposerMixin
@@ -27,11 +27,23 @@ class SqlLookupMixin(SubwordDecomposerMixin):
 
         unique_terms = list(dict.fromkeys(query_terms))
         placeholders = ",".join("?" for _ in unique_terms)
+        # Два раздельных index lookup: точное совпадение по kanji всегда выше
+        # омонимов по reading и не вытесняется ими за LIMIT 16.
         sql = f"""
             SELECT source, kanji, reading, rules, pos_tags, senses_json, freq_rank, score
-            FROM dict_entries
-            WHERE kanji IN ({placeholders}) OR reading IN ({placeholders})
+            FROM (
+                SELECT 0 AS match_priority,
+                       source, kanji, reading, rules, pos_tags, senses_json, freq_rank, score
+                FROM dict_entries
+                WHERE kanji IN ({placeholders})
+                UNION ALL
+                SELECT 1 AS match_priority,
+                       source, kanji, reading, rules, pos_tags, senses_json, freq_rank, score
+                FROM dict_entries
+                WHERE reading IN ({placeholders})
+            )
             ORDER BY
+                match_priority ASC,
                 CASE source
                     WHEN 'warodai' THEN 1
                     WHEN 'jmdict_ru' THEN 2
@@ -40,12 +52,14 @@ class SqlLookupMixin(SubwordDecomposerMixin):
                 END ASC,
                 freq_rank ASC,
                 score DESC
-            LIMIT 16
+            -- Чуть больше прежнего лимита: UNION ALL может вернуть одну и ту же
+            -- статью дважды (kanji и reading совпали), Python дедуплицирует.
+            LIMIT 32
         """
 
         try:
-            with dict_db_connection(self.dict_db_path) as conn:
-                rows = conn.execute(sql, unique_terms + unique_terms).fetchall()
+            conn = get_readonly_dict_connection(self.dict_db_path)
+            rows = conn.execute(sql, unique_terms + unique_terms).fetchall()
         except Exception as e:
             logger.debug(f"Ошибка SQL-поиска словаря: {e}")
             rows = []

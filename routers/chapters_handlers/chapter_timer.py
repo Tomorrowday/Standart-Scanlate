@@ -65,8 +65,14 @@ def _close_other_chapter_timers(cur, chapter_id: int) -> None:
         started_at = other["timer_started_at"]
         if started_at is None:
             continue
+        now = int(time.time())
         last_seen = other["timer_last_seen_at"] or started_at
-        delta = max(0, int(last_seen) - int(started_at))
+        # Живая сессия (heartbeat свежий) закрывается «до текущего момента»,
+        # зависшая — только до последнего heartbeat, чтобы не начислить простой.
+        if now - int(last_seen) <= STALE_TIMER_TIMEOUT_SEC:
+            delta = max(0, now - int(started_at))
+        else:
+            delta = max(0, int(last_seen) - int(started_at))
         cur.execute(
             """
             UPDATE chapters
@@ -120,6 +126,23 @@ def start_chapter_timer(chapter_id: int):
 def stop_chapter_timer(chapter_id: int):
     now = int(time.time())
     with db_session() as cur:
+        # Глава могла быть удалена (в т.ч. из другой вкладки) — остановка
+        # таймера должна быть идемпотентной, без 404 в консоли браузера.
+        cur.execute(
+            "SELECT work_seconds, timer_started_at, timer_last_seen_at FROM chapters WHERE id = ?",
+            (chapter_id,),
+        )
+        if not cur.fetchone():
+            return {
+                "success": True,
+                "chapter_id": chapter_id,
+                "is_running": False,
+                "work_seconds": 0,
+                "current_session_seconds": 0,
+                "total_seconds": 0,
+                "deleted": True,
+            }
+
         work_seconds, started_at, _ = _reconcile_chapter_timer(cur, chapter_id, now)
         if started_at is not None:
             delta = max(0, now - int(started_at))

@@ -4,7 +4,7 @@
 
 "use client"
 
-import { Scan, Sparkles, ScanText } from "lucide-react"
+import { Scan, Sparkles, ScanText, Brush } from "lucide-react"
 import { MANGA_FONTS } from "@/lib/hotkeys"
 import { OllamaStatusCard, type OllamaStatus } from "@/components/settings-modal/ollama-status-card"
 import {
@@ -22,6 +22,15 @@ export interface SettingsParametersTabProps {
   onOcrModelChange: (value: string) => void
   cleanModel: string
   onCleanModelChange: (value: string) => void
+  availableBrushModels: Record<string, string>
+  brushModel: string
+  onBrushModelChange: (value: string) => void
+  brushThreshold: number
+  onBrushThresholdChange: (value: number) => void
+  brushExtraDilate: number
+  onBrushExtraDilateChange: (value: number) => void
+  brushMaxSide: number
+  onBrushMaxSideChange: (value: number) => void
   detectConf: number
   onDetectConfChange: (value: number) => void
   fontBubble: string
@@ -47,6 +56,15 @@ export function SettingsParametersTab({
   onOcrModelChange,
   cleanModel,
   onCleanModelChange,
+  availableBrushModels,
+  brushModel,
+  onBrushModelChange,
+  brushThreshold,
+  onBrushThresholdChange,
+  brushExtraDilate,
+  onBrushExtraDilateChange,
+  brushMaxSide,
+  onBrushMaxSideChange,
   detectConf,
   onDetectConfChange,
   fontBubble,
@@ -134,6 +152,89 @@ export function SettingsParametersTab({
           >
             {Object.entries(availableCleaners).map(([key, label]) => (
               <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Модель мазка текста (U-Net, weights/brush) */}
+      <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-300">
+              <Brush className="h-3.5 w-3.5 text-emerald-400" />
+              Модель мазка текста (weights/brush)
+            </label>
+            <p className="mt-0.5 max-w-md text-[11px] text-slate-500">
+              U-Net строит маску для Free-Text (класс 2) и для ручного режима LaMa у любого типа бабла. В Clean Auto баблы речи/мыслей клинятся белым, SFX — эвристикой OpenCV.
+            </p>
+          </div>
+
+          <select
+            value={brushModel}
+            onChange={(e) => onBrushModelChange(e.target.value)}
+            className="w-56 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 outline-none focus:border-indigo-500"
+          >
+            {Object.entries(availableBrushModels).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-medium text-slate-400">Порог маски</span>
+            <p className="text-[10px] text-slate-500">Ниже — чаще срабатывает, выше — консервативнее.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min="0.20"
+              max="0.80"
+              step="0.05"
+              value={brushThreshold}
+              onChange={(e) => onBrushThresholdChange(parseFloat(e.target.value))}
+              className="h-1.5 w-32 cursor-pointer accent-emerald-500"
+            />
+            <span className="w-12 text-center font-mono text-xs font-bold text-emerald-300 rounded bg-slate-900 px-2 py-1 border border-slate-800">
+              {brushThreshold.toFixed(2)}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-medium text-slate-400">Расширение маски (px)</span>
+            <p className="text-[10px] text-slate-500">0 — как предсказала сеть, минус — эрозия.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min="-4"
+              max="8"
+              step="1"
+              value={brushExtraDilate}
+              onChange={(e) => onBrushExtraDilateChange(parseInt(e.target.value, 10))}
+              className="h-1.5 w-32 cursor-pointer accent-emerald-500"
+            />
+            <span className="w-12 text-center font-mono text-xs font-bold text-emerald-300 rounded bg-slate-900 px-2 py-1 border border-slate-800">
+              {brushExtraDilate > 0 ? `+${brushExtraDilate}` : brushExtraDilate}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-medium text-slate-400">Размер входа</span>
+            <p className="text-[10px] text-slate-500">Должен совпадать с imgsz обучения модели.</p>
+          </div>
+          <select
+            value={brushMaxSide}
+            onChange={(e) => onBrushMaxSideChange(parseInt(e.target.value, 10))}
+            className="w-28 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 outline-none focus:border-emerald-500"
+          >
+            {[512, 640, 768, 896, 1024].map((size) => (
+              <option key={size} value={size}>{size}</option>
             ))}
           </select>
         </div>

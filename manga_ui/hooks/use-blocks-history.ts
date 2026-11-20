@@ -23,7 +23,8 @@ export interface UseBlocksHistoryProps {
   currentPageRef: React.MutableRefObject<PageItem | null>
   setTextBlocks: React.Dispatch<React.SetStateAction<TextBlock[]>>
   setSelectedId: React.Dispatch<React.SetStateAction<string | null>>
-  isDirtyRef: React.MutableRefObject<boolean>
+  /** Помечает страницу грязной и инкрементирует ревизию правок. */
+  markDirty: () => void
   onPageStatusUpdate: (pageId: number, status: PageStatus, cleanPath?: string) => void
 }
 
@@ -36,6 +37,8 @@ export interface UseBlocksHistoryReturn {
   redo: () => void
   resetHistory: () => void
   discardLastSnapshot: () => void
+  getHistoryDepth: () => number
+  truncateHistory: (depth: number) => void
 }
 
 export function useBlocksHistory({
@@ -44,7 +47,7 @@ export function useBlocksHistory({
   currentPageRef,
   setTextBlocks,
   setSelectedId,
-  isDirtyRef,
+  markDirty,
   onPageStatusUpdate,
 }: UseBlocksHistoryProps): UseBlocksHistoryReturn {
   const [canUndo, setCanUndo] = useState(false)
@@ -90,6 +93,16 @@ export function useBlocksHistory({
     syncHistoryFlags()
   }, [syncHistoryFlags])
 
+  const getHistoryDepth = useCallback(() => undoStackRef.current.length, [])
+
+  /** Обрезает историю до глубины, зафиксированной при открытии редактора. */
+  const truncateHistory = useCallback((depth: number) => {
+    if (undoStackRef.current.length > depth) {
+      undoStackRef.current.length = Math.max(0, depth)
+      syncHistoryFlags()
+    }
+  }, [syncHistoryFlags])
+
   const undo = useCallback(async () => {
     if (undoStackRef.current.length === 0) return
     const snapshot = undoStackRef.current.pop()!
@@ -103,7 +116,7 @@ export function useBlocksHistory({
       redoStackRef.current.shift()
     }
 
-    isDirtyRef.current = true
+    markDirty()
     const restored = cloneBlocks(snapshot.blocks)
     setTextBlocks(restored)
     textBlocksRef.current = restored
@@ -112,11 +125,13 @@ export function useBlocksHistory({
     syncHistoryFlags()
 
     if (snapshot.hasCleanStep && currentPageRef.current) {
+      // Страницу фиксируем до await: иначе после отката читаем уже другую.
+      const targetPageId = currentPageRef.current.id
       try {
-        const res = await undoLastCleanStep(currentPageRef.current.id)
+        const res = await undoLastCleanStep(targetPageId)
         if (res?.success && res?.restored_from_backup) {
           onPageStatusUpdate(
-            currentPageRef.current.id,
+            targetPageId,
             (res.page_status as PageStatus) || "cleaned",
             res.clean_path ?? ""
           )
@@ -133,7 +148,7 @@ export function useBlocksHistory({
     currentPageRef,
     setTextBlocks,
     setSelectedId,
-    isDirtyRef,
+    markDirty,
   ])
 
   const redo = useCallback(() => {
@@ -149,14 +164,14 @@ export function useBlocksHistory({
       undoStackRef.current.shift()
     }
 
-    isDirtyRef.current = true
+    markDirty()
     const restored = cloneBlocks(nextSnap.blocks)
     setTextBlocks(restored)
     textBlocksRef.current = restored
     setSelectedId(nextSnap.selectedId)
     selectedIdRef.current = nextSnap.selectedId
     syncHistoryFlags()
-  }, [syncHistoryFlags, textBlocksRef, selectedIdRef, setTextBlocks, setSelectedId, isDirtyRef])
+  }, [syncHistoryFlags, textBlocksRef, selectedIdRef, setTextBlocks, setSelectedId, markDirty])
 
   return {
     canUndo,
@@ -167,5 +182,7 @@ export function useBlocksHistory({
     redo,
     resetHistory,
     discardLastSnapshot,
+    getHistoryDepth,
+    truncateHistory,
   }
 }

@@ -232,6 +232,7 @@ export async function triggerDictionaryBuild(forceRebuild: boolean = false): Pro
   success: boolean
   imported?: Record<string, number>
   error?: string
+  message?: string
   status: DictStatusResponse
 }> {
   const res = await fetch(`${API_BASE_URL}/api/dictionary/build`, {

@@ -1,10 +1,10 @@
 from routers.projects_handlers.global_settings import (
-    _ensure_global_settings_columns,
     get_global_settings_endpoint,
     update_global_settings_endpoint,
     get_available_detectors_endpoint,
     get_available_cleaners_endpoint,
     get_available_ocr_models_endpoint,
+    get_available_brush_models_endpoint,
 )
 from routers.projects_handlers.scanner import (
     VALID_IMAGE_EXTENSIONS,
@@ -34,12 +34,12 @@ from routers.projects_handlers.detailed_stats import (
 )
 
 __all__ = [
-    "_ensure_global_settings_columns",
     "get_global_settings_endpoint",
     "update_global_settings_endpoint",
     "get_available_detectors_endpoint",
     "get_available_cleaners_endpoint",
     "get_available_ocr_models_endpoint",
+    "get_available_brush_models_endpoint",
     "VALID_IMAGE_EXTENSIONS",
     "EXCLUDED_DIR_NAMES",
     "_scan_and_insert_chapters",

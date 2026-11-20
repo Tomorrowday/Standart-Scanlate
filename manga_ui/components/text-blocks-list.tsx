@@ -6,7 +6,6 @@
  */
 
 import type { PageItem } from "@/lib/types"
-import { useCallback } from "react"
 import { BookText, Layers } from "lucide-react"
 import type { TextBlock } from "@/lib/types"
 import { TextBlockCard } from "@/components/text-block-card"
@@ -48,13 +47,6 @@ export function TextBlocksList({
   onMoveDown,
   onSpotClean,
 }: TextBlocksListProps) {
-  const handleSpotClean = useCallback(
-    (block: TextBlock, method: "auto" | "lama" | "white", deleteAfter?: boolean) => {
-      return onSpotClean(block, method, deleteAfter)
-    },
-    [onSpotClean]
-  )
-
   if (!currentPage) {
     return (
       <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-center text-slate-600">
@@ -95,14 +87,14 @@ export function TextBlocksList({
           fontThought={fontThought}
           fontSfx={fontSfx}
           isSelected={block.id === selectedId}
-          onSelect={() => onSelect(block.id)}
-          onChange={(patch) => onUpdate(block.id, patch)}
-          onDelete={() => onDelete(block.id)}
-          onMoveUp={() => onMoveUp(block.id)}
-          onMoveDown={() => onMoveDown(block.id)}
+          onSelect={onSelect}
+          onChange={onUpdate}
+          onDelete={onDelete}
+          onMoveUp={onMoveUp}
+          onMoveDown={onMoveDown}
           canMoveUp={index > 0}
           canMoveDown={index < textBlocks.length - 1}
-          onSpotClean={(method, deleteAfter) => handleSpotClean(block, method, deleteAfter)}
+          onSpotClean={onSpotClean}
         />
       ))}
     </div>

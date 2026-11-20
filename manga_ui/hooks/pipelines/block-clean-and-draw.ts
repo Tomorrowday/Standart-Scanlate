@@ -12,13 +12,18 @@ export interface BlockCleanAndDrawContext {
   currentPageRef: MutableRefObject<PageItem | null>
   textBlocksRef: MutableRefObject<TextBlock[]>
   selectedIdRef: MutableRefObject<string | null>
-  isDirtyRef: MutableRefObject<boolean>
+  /** Помечает страницу грязной и инкрементирует ревизию правок. */
+  markDirty: () => void
+  /** Помечает страницу грязной БЕЗ новой ревизии (фоновый авто-OCR). */
+  markOcrDirty: () => void
   lastTextUndoRef: MutableRefObject<{ blockId: string; time: number } | null>
   pendingOcrPromisesRef: MutableRefObject<Set<Promise<unknown>>>
   setTextBlocks: Dispatch<SetStateAction<TextBlock[]>>
   setSelectedId: Dispatch<SetStateAction<string | null>>
   pushUndoSnapshot: (force?: boolean) => void
   discardLastSnapshot: () => void
+  /** Проверяет, что страница всё ещё открыта (защита от гонок переключения). */
+  isCurrentPage: (pageId: number) => boolean
   onPageStatusUpdate: (pageId: number, status: PageStatus, cleanPath?: string) => void
   globalSettings: TitleSettings
 }
@@ -31,11 +36,12 @@ export async function spotCleanBlockOp(
 ): Promise<void> {
   const page = ctx.currentPageRef.current
   if (!page) return
+  const targetPageId = page.id
   try {
     ctx.pushUndoSnapshot(true)
     ctx.lastTextUndoRef.current = null
     const res = await runSpotClean(
-      page.id,
+      targetPageId,
       {
         x: block.x,
         y: block.y,
@@ -43,13 +49,15 @@ export async function spotCleanBlockOp(
         height: block.height,
         rotation: block.rotation || 0.0,
         shape: block.shape || "rect",
+        class_id: block.class_id ?? 0,
       },
       method
     )
     if (res.success) {
-      ctx.onPageStatusUpdate(page.id, res.page_status || "cleaned", res.clean_path)
-      if (deleteAfter) {
-        ctx.isDirtyRef.current = true
+      ctx.onPageStatusUpdate(targetPageId, res.page_status || "cleaned", res.clean_path)
+      // Удаление блока и правки блоков — только у всё ещё открытой страницы.
+      if (deleteAfter && ctx.isCurrentPage(targetPageId)) {
+        ctx.markDirty()
         ctx.setTextBlocks((prev) => {
           const idx = prev.findIndex((b) => b.id === block.id)
           const filtered = prev.filter((b) => b.id !== block.id)
@@ -65,11 +73,11 @@ export async function spotCleanBlockOp(
         })
       }
     } else {
-      ctx.discardLastSnapshot()
+      if (ctx.isCurrentPage(targetPageId)) ctx.discardLastSnapshot()
       alert("Ошибка точечного клина: " + (res.error || "Неизвестная ошибка"))
     }
   } catch (e) {
-    ctx.discardLastSnapshot()
+    if (ctx.isCurrentPage(targetPageId)) ctx.discardLastSnapshot()
     alert("Ошибка точечного клина: " + String(e))
   }
 }
@@ -82,7 +90,7 @@ export async function addOrUpdateDrawnBlockOp(
 ): Promise<void> {
   ctx.pushUndoSnapshot(false)
   ctx.lastTextUndoRef.current = null
-  ctx.isDirtyRef.current = true
+  ctx.markDirty()
   const rot = rotation !== undefined ? rotation : rect.rotation || 0
 
   if (existingId) {
@@ -158,7 +166,9 @@ export async function addOrUpdateDrawnBlockOp(
       // Проверяем, что блок не был удалён пользователем, пока шёл OCR
       if (!ctx.textBlocksRef.current.some((b) => b.id === id)) return
 
-      ctx.isDirtyRef.current = true
+      // Авто-OCR — не правка пользователя: не поднимаем ревизию dirty,
+      // иначе isDirtyRef остаётся true сразу после сохранения, дождавшегося OCR.
+      ctx.markOcrDirty()
       ctx.setTextBlocks((prev) => {
         const next = prev.map((b) => {
           if (b.id !== id) return b

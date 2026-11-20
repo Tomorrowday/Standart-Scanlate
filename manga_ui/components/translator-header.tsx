@@ -19,13 +19,11 @@ import {
   Sliders,
   Type,
   CheckCheck,
-  Play,
-  Square,
-  Clock,
   BarChart3,
   ZapOff,
 } from "lucide-react"
 import { useHotkeysConfig } from "@/hooks/use-manga-hotkeys"
+import { ChapterTimerWidget } from "@/components/chapter-timer-widget"
 
 export interface TranslatorHeaderProps {
   currentPage: PageItem | null
@@ -39,10 +37,6 @@ export interface TranslatorHeaderProps {
   isSaving: boolean
   isExporting: boolean
   isExportSuccess: boolean
-  isTimerRunning: boolean
-  timerSeconds: number
-  onStartTimer: () => void
-  onStopTimer: () => void
   isUnloadingModels?: boolean
   unloadMessage?: string | null
   onUnloadModels?: () => void
@@ -54,16 +48,6 @@ export interface TranslatorHeaderProps {
   onOpenHotkeys?: () => void
   onOpenSettings?: () => void
   onOpenStatistics?: () => void
-}
-
-function formatTimer(totalSec: number): string {
-  const h = Math.floor(totalSec / 3600)
-  const m = Math.floor((totalSec % 3600) / 60)
-  const s = totalSec % 60
-  if (h > 0) {
-    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
-  }
-  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
 }
 
 export function TranslatorHeader({
@@ -78,10 +62,6 @@ export function TranslatorHeader({
   isSaving,
   isExporting,
   isExportSuccess,
-  isTimerRunning,
-  timerSeconds,
-  onStartTimer,
-  onStopTimer,
   isUnloadingModels = false,
   unloadMessage = null,
   onUnloadModels,
@@ -145,35 +125,8 @@ export function TranslatorHeader({
       </div>
 
       <div className="flex items-center gap-2.5 text-xs text-slate-400">
-        {/* Трекинг времени текущей главы: Старт / Стоп и таймер */}
-        <div className="flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900 px-2 py-1">
-          <Clock className={`h-3.5 w-3.5 ${isTimerRunning ? "text-emerald-400 animate-pulse" : "text-slate-400"}`} />
-          <span className={`font-mono text-xs font-semibold ${isTimerRunning ? "text-emerald-300" : "text-slate-300"}`}>
-            {formatTimer(timerSeconds)}
-          </span>
-
-          <button
-            type="button"
-            disabled={!currentChapterId || isTimerRunning}
-            onClick={onStartTimer}
-            className="flex items-center gap-1 rounded bg-emerald-600/30 hover:bg-emerald-600 px-2 py-0.5 text-[11px] font-medium text-emerald-200 hover:text-white transition-all disabled:opacity-30"
-            title="Запустить таймер работы над текущей главой"
-          >
-            <Play className="h-3 w-3 fill-current" />
-            Старт
-          </button>
-
-          <button
-            type="button"
-            disabled={!currentChapterId || !isTimerRunning}
-            onClick={onStopTimer}
-            className="flex items-center gap-1 rounded bg-rose-600/30 hover:bg-rose-600 px-2 py-0.5 text-[11px] font-medium text-rose-200 hover:text-white transition-all disabled:opacity-30"
-            title="Остановить таймер и зафиксировать время в БД"
-          >
-            <Square className="h-3 w-3 fill-current" />
-            Стоп
-          </button>
-        </div>
+        {/* Трекинг времени текущей главы: тик изолирован внутри виджета */}
+        <ChapterTimerWidget chapterId={currentChapterId ?? null} />
 
         {/* Кнопка полной выгрузки нейросетей из VRAM и RAM */}
         <button

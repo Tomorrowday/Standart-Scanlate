@@ -19,6 +19,7 @@ from services.cleaner_ops.lama_inpaint import (
     _get_affine_points,
     _blend_rotated_patch,
 )
+from services.cleaner_ops.stroke_mask import build_text_stroke_mask
 from services.cleaner_ops.bubble_cleaner import (
     clean_speech_bubble,
     spot_clean_region,
@@ -38,6 +39,7 @@ __all__ = [
     "blend_inpainted_patch",
     "_get_affine_points",
     "_blend_rotated_patch",
+    "build_text_stroke_mask",
     "clean_speech_bubble",
     "spot_clean_region",
     "inpaint_by_brush_mask",

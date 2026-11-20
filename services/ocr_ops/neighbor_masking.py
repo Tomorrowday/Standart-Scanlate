@@ -44,8 +44,6 @@ def _mask_foreign_neighbor_regions_in_page_coords(
         else None
     )
 
-    yy, xx = np.mgrid[sy1:sy2, sx1:sx2]
-
     for ob in other_boxes:
         try:
             if int(ob.get("class_id", 0)) not in (0, 1):
@@ -93,9 +91,6 @@ def _mask_foreign_neighbor_regions_in_page_coords(
         lx1, ly1 = ix1 - sx1, iy1 - sy1
         lx2, ly2 = ix2 - sx1, iy2 - sy1
 
-        sub_xx = xx[ly1:ly2, lx1:lx2]
-        sub_yy = yy[ly1:ly2, lx1:lx2]
-
         dx = bcx - acx
         dy = bcy - acy
         norm_dx = abs(dx) / ((aw + bw) / 2.0)
@@ -104,6 +99,23 @@ def _mask_foreign_neighbor_regions_in_page_coords(
         # Середина зоны пересечения двух рамок (нейтральная граница без перекоса в пользу большого бабла)
         mid_ov_x = (max(x1, ox1) + min(x2, ox2)) / 2.0
         mid_ov_y = (max(y1, oy1) + min(y2, oy2)) / 2.0
+
+        region = arr[ly1:ly2, lx1:lx2]
+        rh, rw = region.shape[:2]
+
+        # Сохраняем собственное текстовое ядро бабла A, чтобы вернуть его после затирания.
+        core_backup = None
+        if core_a is not None:
+            core_gx1 = x1 + core_a[0] - 1
+            core_gy1 = y1 + core_a[1] - 1
+            core_gx2 = x1 + core_a[2] + 1
+            core_gy2 = y1 + core_a[3] + 1
+            cx1 = max(0, core_gx1 - ix1)
+            cy1 = max(0, core_gy1 - iy1)
+            cx2 = min(rw, core_gx2 - ix1 + 1)
+            cy2 = min(rh, core_gy2 - iy1 + 1)
+            if cx2 > cx1 and cy2 > cy1:
+                core_backup = (region[cy1:cy2, cx1:cx2].copy(), cy1, cy2, cx1, cx2)
 
         if norm_dy >= norm_dx:
             # Баблы расположены преимущественно друг над другом: делим по горизонтали (Y)
@@ -114,7 +126,9 @@ def _mask_foreign_neighbor_regions_in_page_coords(
                     cut_y = max(float(iy1), min(float(iy2), float(safe_y)))
                 else:
                     cut_y = mid_ov_y
-                foreign_mask = sub_yy > cut_y
+                # sub_yy > cut_y (строго): первая затираемая строка — floor(cut_y)+1
+                row_start = max(0, min(rh, int(np.floor(cut_y)) + 1 - iy1))
+                region[row_start:, :] = [255, 255, 255]
             else:
                 # Сосед B выше бабла A
                 if core_a is not None:
@@ -122,7 +136,9 @@ def _mask_foreign_neighbor_regions_in_page_coords(
                     cut_y = max(float(iy1), min(float(iy2), float(safe_y)))
                 else:
                     cut_y = mid_ov_y
-                foreign_mask = sub_yy < cut_y
+                # sub_yy < cut_y (строго): последняя граница — ceil(cut_y)-1
+                row_end = max(0, min(rh, int(np.ceil(cut_y)) - iy1))
+                region[:row_end, :] = [255, 255, 255]
         else:
             # Баблы расположены преимущественно слева/справа: делим по вертикали (X)
             if dx > 0:
@@ -132,7 +148,8 @@ def _mask_foreign_neighbor_regions_in_page_coords(
                     cut_x = max(float(ix1), min(float(ix2), float(safe_x)))
                 else:
                     cut_x = mid_ov_x
-                foreign_mask = sub_xx > cut_x
+                col_start = max(0, min(rw, int(np.floor(cut_x)) + 1 - ix1))
+                region[:, col_start:] = [255, 255, 255]
             else:
                 # Сосед B левее бабла A
                 if core_a is not None:
@@ -140,24 +157,12 @@ def _mask_foreign_neighbor_regions_in_page_coords(
                     cut_x = max(float(ix1), min(float(ix2), float(safe_x)))
                 else:
                     cut_x = mid_ov_x
-                foreign_mask = sub_xx < cut_x
+                col_end = max(0, min(rw, int(np.ceil(cut_x)) - ix1))
+                region[:, :col_end] = [255, 255, 255]
 
-        # Дополнительно защищаем собственное текстовое ядро бабла A от любого затирания
-        if core_a is not None:
-            core_gx1 = x1 + core_a[0] - 1
-            core_gy1 = y1 + core_a[1] - 1
-            core_gx2 = x1 + core_a[2] + 1
-            core_gy2 = y1 + core_a[3] + 1
-            inside_own_core = (
-                (sub_xx >= core_gx1)
-                & (sub_xx <= core_gx2)
-                & (sub_yy >= core_gy1)
-                & (sub_yy <= core_gy2)
-            )
-            foreign_mask = foreign_mask & (~inside_own_core)
-
-        region = arr[ly1:ly2, lx1:lx2]
-        region[foreign_mask] = [255, 255, 255]
+        if core_backup is not None:
+            saved, cy1, cy2, cx1, cx2 = core_backup
+            region[cy1:cy2, cx1:cx2] = saved
 
 
 __all__ = ["_mask_foreign_neighbor_regions_in_page_coords"]

@@ -3,7 +3,7 @@
 
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import type { PageItem } from "@/lib/types"
 import {
   runPageAutoDetect,
@@ -27,7 +27,7 @@ import type {
 const ACTION_LABELS: Record<BatchAction, string> = {
   detect: "Detecting & OCR",
   clean: "Smart Cleaning & Retouching (AI)",
-  translate: "Translating chapter with Gemini",
+  translate: "Перевод главы (локальная модель)",
   export: "Exporting pages",
   "script-export": "Exporting JSON script to folder...",
   "script-import": "Importing JSON script...",
@@ -46,6 +46,19 @@ export function useBatchChapterActions({
   const [progress, setProgress] = useState<BatchProgress | null>(null)
   const [justFinished, setJustFinished] = useState<BatchAction | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Длинные async-операции замкнуты на коллбэки момента старта. Держим их
+  // в ref и обновляем каждый рендер, чтобы финал батча вызывал свежие
+  // обработчики (иначе пользователя перебрасывало на старую страницу и
+  // затирало несохранённые правки).
+  const onRefreshCurrentRef = useRef(onRefreshCurrent)
+  const onPageStatusUpdateRef = useRef(onPageStatusUpdate)
+  const onCompleteBatchRef = useRef(onCompleteBatch)
+  useEffect(() => {
+    onRefreshCurrentRef.current = onRefreshCurrent
+    onPageStatusUpdateRef.current = onPageStatusUpdate
+    onCompleteBatchRef.current = onCompleteBatch
+  }, [onRefreshCurrent, onPageStatusUpdate, onCompleteBatch])
 
   const isRunning = progress !== null
   const percent = progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
@@ -97,8 +110,8 @@ export function useBatchChapterActions({
       }
     } finally {
       setProgress(null)
-      onCompleteBatch?.()
-      onRefreshCurrent()
+      onCompleteBatchRef.current?.()
+      onRefreshCurrentRef.current(action)
     }
   }
 
@@ -111,7 +124,7 @@ export function useBatchChapterActions({
       if (!res || res.success === false) {
         throw new Error(res?.error || "Ошибка детекции")
       }
-      onPageStatusUpdate?.(page.id, "detected")
+      onPageStatusUpdateRef.current?.(page.id, res.page_status || "detected")
     })
 
   const cleanChapter = () =>
@@ -120,7 +133,9 @@ export function useBatchChapterActions({
       if (!res || res.success === false) {
         throw new Error(res?.error || "Ошибка клина")
       }
-      onPageStatusUpdate?.(page.id, res.page_status || "cleaned", res.clean_path)
+      // Пустая страница без блоков: бэкенд вернул skipped и не менял clean_path.
+      if (res.skipped) return
+      onPageStatusUpdateRef.current?.(page.id, res.page_status || "cleaned", res.clean_path)
     })
 
   const translateChapter = async () => {
@@ -133,16 +148,20 @@ export function useBatchChapterActions({
       action: "translate",
       done: 0,
       total: 1,
-      label: "Translating entire chapter via Gemini...",
+      label: "Перевод всей главы (локальная модель)...",
     })
 
     try {
-      await runTranslateChapter(chapterId)
-      pages.forEach((p) => {
-        if (p.status !== "done") {
-          onPageStatusUpdate?.(p.id, "translated")
-        }
-      })
+      const res = await runTranslateChapter(chapterId)
+      // Ставим `translated` только страницам, куда бэкенд реально записал перевод.
+      // Старый бэкенд не возвращает список — тогда статусы не трогаем.
+      if (Array.isArray(res.updated_page_ids)) {
+        res.updated_page_ids.forEach((pageId) => {
+          const page = pages.find((p) => p.id === pageId)
+          if (!page || page.status === "done") return
+          onPageStatusUpdateRef.current?.(pageId, "translated")
+        })
+      }
       setProgress({
         action: "translate",
         done: 1,
@@ -156,8 +175,8 @@ export function useBatchChapterActions({
       alert("Ошибка перевода главы: " + String(e))
     } finally {
       setProgress(null)
-      onCompleteBatch?.()
-      onRefreshCurrent()
+      onCompleteBatchRef.current?.()
+      onRefreshCurrentRef.current("translate")
     }
   }
 
@@ -169,9 +188,10 @@ export function useBatchChapterActions({
     setProgress,
     setJustFinished,
     fileInputRef,
-    onPageStatusUpdate,
-    onCompleteBatch,
-    onRefreshCurrent,
+    onPageStatusUpdate: (pageId, status, cleanPath) =>
+      onPageStatusUpdateRef.current?.(pageId, status, cleanPath),
+    onCompleteBatch: () => onCompleteBatchRef.current?.(),
+    onRefreshCurrent: (action) => onRefreshCurrentRef.current(action),
   })
 
   const exportAll = () =>

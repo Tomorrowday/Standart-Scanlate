@@ -45,7 +45,7 @@ export interface BatchChapterActionsProps {
   titleDefaultFontSize?: number
   onSaveCurrentPage?: () => Promise<void>
   onPageStatusUpdate?: (pageId: number, status: PageStatus, cleanPath?: string) => void
-  onRefreshCurrent: () => void
+  onRefreshCurrent: (action?: BatchAction) => void
   onCompleteBatch?: () => void
   /** Если передан, панель использует его вместо собственного вызова `useBatchChapterActions` */
   controller?: BatchChapterActionsController

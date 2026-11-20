@@ -5,8 +5,9 @@
  * Контракт модальных окон сканирования проекта и добавления главы в тайтл.
  */
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Loader2 } from "lucide-react"
+import { openUiLayer } from "@/lib/ui-layer-store"
 
 export interface SidebarModalsProps {
   showScanModal: boolean
@@ -34,6 +35,24 @@ export function SidebarModals({
   const [chapterPath, setChapterPath] = useState("")
   const [chapterNumber, setChapterNumber] = useState("")
   const [isAddingChapter, setIsAddingChapter] = useState(false)
+
+  // Модалки рендерятся условно внутри этого контейнера, поэтому считаем слой здесь.
+  useEffect(() => {
+    if (!showScanModal && !showAddChapterModal) return
+    return openUiLayer()
+  }, [showScanModal, showAddChapterModal])
+
+  // Esc закрывает активную модалку.
+  useEffect(() => {
+    if (!showScanModal && !showAddChapterModal) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      if (showScanModal) onCloseScanModal()
+      if (showAddChapterModal) onCloseAddChapterModal()
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [showScanModal, showAddChapterModal, onCloseScanModal, onCloseAddChapterModal])
 
   const handleScanSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,8 +89,14 @@ export function SidebarModals({
   return (
     <>
       {showScanModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={onCloseScanModal}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="text-sm font-semibold text-white">Сканировать новый тайтл</h3>
             <p className="mt-1 text-xs text-slate-400">
               Создаст новый проект тайтла и просканирует все папки глав внутри.
@@ -125,8 +150,14 @@ export function SidebarModals({
       )}
 
       {showAddChapterModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={onCloseAddChapterModal}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="text-sm font-semibold text-white">
               Добавить главу в &laquo;{selectedProjectName || "Тайтл"}&raquo;
             </h3>

@@ -16,6 +16,7 @@ import {
 } from "@/lib/api"
 import { StatsSummaryBar } from "@/components/statistics-modal/stats-summary-bar"
 import { TitleStatsAccordion } from "@/components/statistics-modal/title-stats-accordion"
+import { openUiLayer } from "@/lib/ui-layer-store"
 
 export interface StatisticsModalProps {
   onClose: () => void
@@ -33,6 +34,9 @@ export function StatisticsModal({ onClose, currentChapterId }: StatisticsModalPr
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Пока модалка открыта, глобальные хоткеи страницы не должны срабатывать.
+  useEffect(() => openUiLayer(), [])
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {

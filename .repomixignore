@@ -74,5 +74,6 @@ manga_ui/pnpm-workspace.yaml
 **/package-lock.json
 **/pnpm-lock.yaml
 
+
 # Временный кэш компилятора TypeScript
 **/*.tsbuildinfo

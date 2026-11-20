@@ -29,7 +29,6 @@ def detect_page_bubbles_service(
         raise ValueError("Файл не найден на диске")
 
     file_path = str(row["file_path"])
-    current_status = str(row["status"])
 
     cfg = get_active_global_settings()
     detector_model = cfg.get("detector_model") or "yolo_manga.pt"
@@ -56,46 +55,57 @@ def detect_page_bubbles_service(
         )
         boxes: List[Dict[str, Any]] = [dict(b) for b in raw_boxes]
 
+        # Сначала собираем все метаданные и выполняем OCR ВНЕ транзакции:
+        # OCR страницы занимает 5–30 секунд, и открытый write-lock SQLite на это
+        # время блокирует heartbeat таймера, сохранение других страниц и глоссарий.
+        rows_to_insert: List[Tuple[Any, ...]] = []
+        for idx, b in enumerate(boxes):
+            block_id = str(uuid.uuid4())
+            cls_id = int(b.get("class_id", 0))
+            block_shape = "rect"
+
+            if cls_id == 0:
+                block_font = font_bubble
+            elif cls_id == 1:
+                block_font = font_thought
+            else:
+                block_font = font_sfx
+
+            b["id"] = block_id
+            b["class_id"] = cls_id
+            b["shape"] = block_shape
+            b["font_family"] = block_font
+            b["font_size"] = None
+            b["padding_mode"] = default_pad
+            b["min_hyphens"] = default_hyph
+            b["text_color"] = "black"
+            b["rotation"] = 0.0
+
+            other_boxes = [boxes[j] for j in range(len(boxes)) if j != idx]
+            jap_text = ocr_image_region(
+                image,
+                float(b["x"]),
+                float(b["y"]),
+                float(b["width"]),
+                float(b["height"]),
+                rotation=0.0,
+                class_id=cls_id,
+                other_boxes=other_boxes,
+                ocr_model_name=ocr_model,
+            )
+            b["jap_text"] = jap_text
+            b["status"] = "ocr-done" if jap_text else "new"
+
+            rows_to_insert.append((
+                block_id, page_id, cls_id, b["x"], b["y"], b["width"], b["height"], jap_text, b["order_index"],
+                block_font, block_shape, default_pad, int(default_hyph), b["status"]
+            ))
+
+        # Быстрая запись (< 2 мс): удаление старых блоков и вставка новых.
         with db_session() as cur:
             cur.execute("DELETE FROM text_blocks WHERE page_id = ?", (page_id,))
-            for idx, b in enumerate(boxes):
-                block_id = str(uuid.uuid4())
-                cls_id = int(b.get("class_id", 0))
-                block_shape = "rect"
-
-                if cls_id == 0:
-                    block_font = font_bubble
-                elif cls_id == 1:
-                    block_font = font_thought
-                else:
-                    block_font = font_sfx
-
-                b["id"] = block_id
-                b["class_id"] = cls_id
-                b["shape"] = block_shape
-                b["font_family"] = block_font
-                b["font_size"] = None
-                b["padding_mode"] = default_pad
-                b["min_hyphens"] = default_hyph
-                b["text_color"] = "black"
-                b["rotation"] = 0.0
-
-                other_boxes = [boxes[j] for j in range(len(boxes)) if j != idx]
-                jap_text = ocr_image_region(
-                    image,
-                    float(b["x"]),
-                    float(b["y"]),
-                    float(b["width"]),
-                    float(b["height"]),
-                    rotation=0.0,
-                    class_id=cls_id,
-                    other_boxes=other_boxes,
-                    ocr_model_name=ocr_model,
-                )
-                b["jap_text"] = jap_text
-                b["status"] = "ocr-done" if jap_text else "new"
-
-                cur.execute(
+            if rows_to_insert:
+                cur.executemany(
                     """
                     INSERT OR REPLACE INTO text_blocks (
                         id, page_id, class_id, x, y, width, height, rotation, jap_text, order_index, 
@@ -103,17 +113,13 @@ def detect_page_bubbles_service(
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, NULL, ?, 'black', ?, ?, ?, ?)
                     """,
-                    (
-                        block_id, page_id, cls_id, b["x"], b["y"], b["width"], b["height"], jap_text, b["order_index"],
-                        block_font, block_shape, default_pad, int(default_hyph), b["status"]
-                    )
+                    rows_to_insert,
                 )
 
+            # Повторный детект удалил блоки вместе с переводом, поэтому статус
+            # всегда актуализируем (в т.ч. для cleaned/translated/done).
             new_status = "detected" if boxes else "raw"
-            if current_status not in ["cleaned", "translated", "done"]:
-                cur.execute("UPDATE pages SET status = ? WHERE id = ?", (new_status, page_id))
-            else:
-                new_status = current_status
+            cur.execute("UPDATE pages SET status = ? WHERE id = ?", (new_status, page_id))
 
         elapsed = round(time.time() - start_time, 4)
         return boxes, new_status, elapsed

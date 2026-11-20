@@ -62,6 +62,9 @@ export async function addChapterToProject(
 export async function getProjectTree(titleId: number): Promise<ProjectTree> {
   const res = await fetch(`${API_BASE_URL}/api/projects/${titleId}/tree`)
   const data = await handleApiResponse<{ success: boolean; title: ProjectTree }>(res, "Ошибка дерева проекта")
+  if (!data?.title) {
+    throw new Error("Тайтл не найден или удалён")
+  }
   return data.title
 }
 

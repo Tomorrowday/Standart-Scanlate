@@ -15,6 +15,7 @@ import { checkOllamaConnection } from "@/lib/api/ollama"
 import { SettingsTogglesTab } from "@/components/settings-modal/settings-toggles-tab"
 import { SettingsParametersTab } from "@/components/settings-modal/settings-parameters-tab"
 import type { OllamaStatus } from "@/components/settings-modal/ollama-status-card"
+import { openUiLayer } from "@/lib/ui-layer-store"
 
 export interface SettingsModalProps {
   onClose: () => void
@@ -26,6 +27,10 @@ export function SettingsModal({
   onSettingsUpdated,
 }: SettingsModalProps) {
   const [mounted, setMounted] = useState(false)
+
+  // Пока модалка открыта, глобальные хоткеи страницы не должны срабатывать.
+  useEffect(() => openUiLayer(), [])
+
   const [activeTab, setActiveTab] = useState<"toggles" | "parameters">("toggles")
   const [loading, setLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -33,6 +38,9 @@ export function SettingsModal({
 
   const [availableDetectors, setAvailableDetectors] = useState<Record<string, string>>({})
   const [availableCleaners, setAvailableCleaners] = useState<Record<string, string>>({})
+  const [availableBrushModels, setAvailableBrushModels] = useState<Record<string, string>>({
+    opencv: "OpenCV (эвристика, без нейросети)",
+  })
   const [availableOcrModels, setAvailableOcrModels] = useState<Record<string, string>>({
     "manga-ocr-base": "manga-ocr-base (Default)",
   })
@@ -58,6 +66,10 @@ export function SettingsModal({
   const [detectorModel, setDetectorModel] = useState<string>("yolo_manga.pt")
   const [ocrModel, setOcrModel] = useState<string>("manga-ocr-base")
   const [cleanModel, setCleanModel] = useState<string>("anime-manga-big-lama.pt")
+  const [brushModel, setBrushModel] = useState<string>("opencv")
+  const [brushThreshold, setBrushThreshold] = useState<number>(0.5)
+  const [brushExtraDilate, setBrushExtraDilate] = useState<number>(0)
+  const [brushMaxSide, setBrushMaxSide] = useState<number>(512)
   const [detectConf, setDetectConf] = useState<number>(0.25)
   const [fontBubble, setFontBubble] = useState<string>("v_CCFaceFront")
   const [fontThought, setFontThought] = useState<string>("v_CCFaceFront")
@@ -81,7 +93,7 @@ export function SettingsModal({
 
   const testOllama = async () => {
     setOllamaStatus("checking")
-    const res = await checkOllamaConnection("http://localhost:11434")
+    const res = await checkOllamaConnection()
     if (res.ok) {
       setOllamaStatus("online")
       setOllamaModels(res.models)
@@ -100,6 +112,9 @@ export function SettingsModal({
           const s = res.settings
           if (s.available_detectors) setAvailableDetectors(s.available_detectors)
           if (s.available_cleaners) setAvailableCleaners(s.available_cleaners)
+          if (s.available_brush_models && Object.keys(s.available_brush_models).length > 0) {
+            setAvailableBrushModels(s.available_brush_models)
+          }
           if (s.available_ocr_models && Object.keys(s.available_ocr_models).length > 0) {
             setAvailableOcrModels(s.available_ocr_models)
           }
@@ -107,6 +122,10 @@ export function SettingsModal({
           if (s.detector_model) setDetectorModel(s.detector_model)
           if (s.ocr_model) setOcrModel(s.ocr_model)
           if (s.clean_model) setCleanModel(s.clean_model)
+          if (s.brush_model) setBrushModel(s.brush_model)
+          if (s.brush_threshold !== undefined) setBrushThreshold(s.brush_threshold)
+          if (s.brush_extra_dilate !== undefined) setBrushExtraDilate(s.brush_extra_dilate)
+          if (s.brush_max_side !== undefined) setBrushMaxSide(s.brush_max_side)
           if (s.detect_conf !== undefined) setDetectConf(s.detect_conf)
 
           if (s.auto_oval_bubble !== undefined) setAutoOvalBubble(Boolean(s.auto_oval_bubble))
@@ -141,6 +160,10 @@ export function SettingsModal({
         detector_model: detectorModel,
         ocr_model: ocrModel,
         clean_model: cleanModel,
+        brush_model: brushModel,
+        brush_threshold: brushThreshold,
+        brush_extra_dilate: brushExtraDilate,
+        brush_max_side: brushMaxSide,
         detect_conf: detectConf,
         auto_oval_bubble: autoOvalBubble,
         default_padding: defaultPadding,
@@ -265,6 +288,15 @@ export function SettingsModal({
               onOcrModelChange={setOcrModel}
               cleanModel={cleanModel}
               onCleanModelChange={setCleanModel}
+              availableBrushModels={availableBrushModels}
+              brushModel={brushModel}
+              onBrushModelChange={setBrushModel}
+              brushThreshold={brushThreshold}
+              onBrushThresholdChange={setBrushThreshold}
+              brushExtraDilate={brushExtraDilate}
+              onBrushExtraDilateChange={setBrushExtraDilate}
+              brushMaxSide={brushMaxSide}
+              onBrushMaxSideChange={setBrushMaxSide}
               detectConf={detectConf}
               onDetectConfChange={setDetectConf}
               fontBubble={fontBubble}

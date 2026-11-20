@@ -2,7 +2,7 @@
 # Нейросетевой клин LaMa и сглаженное вклеивание патчей
 
 import math
-from typing import Tuple
+from typing import Optional, Tuple
 import cv2
 import numpy as np
 from PIL import Image
@@ -14,8 +14,25 @@ from config import LAMA_FORCE_GRAYSCALE, MAX_LAMA_DIM
 from services.cleaner_ops.image_io import is_patch_monochrome
 from services.cleaner_ops.white_bubble import _create_shape_mask
 
+# Жёсткий предохранитель от OOM: гигантский локальный кроп сжимается до этого размера
+# на время инференса. Поскольку blend_inpainted_patch вклеивает результат только по
+# узкой маске, окружающий арт не теряет резкости.
+LAMA_HARD_SAFE_DIM = 1600
 
-def inpaint_patch_with_lama(patch_bgr: np.ndarray, mask: np.ndarray, clean_model_name: str = "") -> np.ndarray:
+
+def inpaint_patch_with_lama(
+    patch_bgr: np.ndarray,
+    mask: np.ndarray,
+    clean_model_name: str = "",
+    downscale: bool = False,
+) -> np.ndarray:
+    """
+    Инпейнт патча LaMa.
+
+    downscale передаётся явным аргументом из настроек запроса, а не через
+    глобальное ml.lama_downscale: параллельные запросы не перетирают друг другу
+    режим качества.
+    """
     model = ml.load_cleaner(clean_model_name)
     if model is None:
         return patch_bgr
@@ -23,9 +40,13 @@ def inpaint_patch_with_lama(patch_bgr: np.ndarray, mask: np.ndarray, clean_model
     h, w = patch_bgr.shape[:2]
     max_dim = max(h, w)
 
-    need_downscale = ml.lama_downscale and (max_dim > MAX_LAMA_DIM)
+    need_downscale = (
+        (downscale and (max_dim > MAX_LAMA_DIM))
+        or (max_dim > LAMA_HARD_SAFE_DIM)
+    )
+    limit_dim = min(MAX_LAMA_DIM, LAMA_HARD_SAFE_DIM) if downscale else LAMA_HARD_SAFE_DIM
     if need_downscale:
-        scale_factor = MAX_LAMA_DIM / float(max_dim)
+        scale_factor = limit_dim / float(max_dim)
         proc_w = max(16, int(round(w * scale_factor)))
         proc_h = max(16, int(round(h * scale_factor)))
         proc_patch = cv2.resize(patch_bgr, (proc_w, proc_h), interpolation=cv2.INTER_AREA)
@@ -93,22 +114,64 @@ def _blend_rotated_patch(
     dst_pts: np.ndarray,
     bw: int,
     bh: int,
-    shape: str = "rect"
+    shape: str = "rect",
+    mask_patch: Optional[np.ndarray] = None,
 ):
     img_h, img_w = image_np.shape[:2]
-    mask_patch = _create_shape_mask(bh, bw, shape)
-    mask_patch_feathered = cv2.GaussianBlur(mask_patch.astype(np.float32) / 255.0, (5, 5), 1.2)
+    ellipse_5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
 
-    m_paste = cv2.getAffineTransform(dst_pts, src_pts)
+    if mask_patch is None:
+        # Сплошная маска (white): эрозия убирает резкую прямоугольную кромку патча,
+        # а BORDER_CONSTANT не даёт размытию «затянуть» внешнюю область внутрь.
+        mask_patch = _create_shape_mask(bh, bw, shape)
+        # Крошечный бабл (≤10px) эрозия съедала в ноль — тогда маску не трогаем.
+        if bw > 10 and bh > 10:
+            mask_patch = cv2.erode(mask_patch, ellipse_5, iterations=1)
+    else:
+        # Маска штрихов: дилатация компенсирует последующее размытие и не оставляет
+        # полупрозрачный ореол старой буквы после обратного поворота.
+        mask_patch = cv2.dilate(mask_patch, ellipse_5, iterations=1)
+
+    mask_patch_feathered = cv2.GaussianBlur(
+        mask_patch.astype(np.float32) / 255.0,
+        (5, 5),
+        1.2,
+        borderType=cv2.BORDER_CONSTANT,
+    )
+
+    # Локальный ROI вместо полноэкранного warpAffine: раньше на каждый
+    # повёрнутый бабл аллоцировались два массива размером со всю страницу
+    # (~200-350 МБ на 4K-скан). Теперь обрабатываем только bbox повёрнутой рамки.
+    src = src_pts.astype(np.float32)
+    # src_pts = TL, TR, BL; четвёртый угол параллелограмма — BR = TR + BL - TL.
+    fourth = src[1] + src[2] - src[0]
+    quad = np.array([src[0], src[1], src[2], fourth], dtype=np.float32)
+
+    pad = 2
+    bx1 = max(0, int(math.floor(float(quad[:, 0].min()))) - pad)
+    by1 = max(0, int(math.floor(float(quad[:, 1].min()))) - pad)
+    bx2 = min(img_w, int(math.ceil(float(quad[:, 0].max()))) + pad)
+    by2 = min(img_h, int(math.ceil(float(quad[:, 1].max()))) + pad)
+    if bx2 <= bx1 or by2 <= by1:
+        return
+
+    roi_w, roi_h = bx2 - bx1, by2 - by1
+
+    # warpAffine трактует матрицу как forward (patch -> страница) и сам её
+    # инвертирует. Переносим целевую страницу к началу ROI, чтобы получить
+    # координаты локального вывода.
+    local_src = src - np.float32([bx1, by1])
+    m_paste = cv2.getAffineTransform(dst_pts, local_src)
     cleaned_back = cv2.warpAffine(
-        cleaned_upright, m_paste, (img_w, img_h),
+        cleaned_upright, m_paste, (roi_w, roi_h),
         flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE
     )
     alpha_back = cv2.warpAffine(
-        mask_patch_feathered, m_paste, (img_w, img_h),
+        mask_patch_feathered, m_paste, (roi_w, roi_h),
         flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0
     )
 
+    roi = image_np[by1:by2, bx1:bx2].astype(np.float32)
     alpha_3d = np.expand_dims(alpha_back, axis=2)
-    blended = image_np.astype(np.float32) * (1.0 - alpha_3d) + cleaned_back.astype(np.float32) * alpha_3d
-    image_np[:] = np.clip(blended, 0, 255).astype(np.uint8)
+    blended = roi * (1.0 - alpha_3d) + cleaned_back.astype(np.float32) * alpha_3d
+    image_np[by1:by2, bx1:bx2] = np.clip(blended, 0, 255).astype(np.uint8)

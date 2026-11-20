@@ -55,6 +55,7 @@ export type HotkeyActionId =
   | "setClassThought"
   | "setClassText"
   | "setClassSfx"
+  | "cleanPage"
   | "spotWhite"
   | "spotLama"
   | "spotWhiteDel"
@@ -106,7 +107,7 @@ export const DEFAULT_HOTKEYS: HotkeyConfig = {
 
   // Стили, OCR и типы бабла
   ocrBlock: { code: "KeyO", label: "O", name: "Распознать OCR бабла", category: "bubble" },
-  setClassBubble: { code: "KeyC", label: "C", name: "Класс: Бабл (0)", category: "bubble" },
+  setClassBubble: { code: "KeyC", shift: true, label: "Shift+C", name: "Класс: Бабл (0)", category: "bubble" },
   setClassThought: { code: "KeyV", label: "V", name: "Класс: Мысли (1)", category: "bubble" },
   setClassText: { code: "KeyG", label: "G", name: "Класс: Текст (2)", category: "bubble" },
   setClassSfx: { code: "F4", label: "F4", name: "Класс: Звук SFX (3)", category: "bubble" },
@@ -122,6 +123,7 @@ export const DEFAULT_HOTKEYS: HotkeyConfig = {
   toggleUppercase: { code: "KeyU", label: "U", name: "Все заглавные", category: "bubble" },
 
   // Клин и инструменты
+  cleanPage: { code: "KeyC", label: "C", name: "Автоклин страницы (Smart Clean)", category: "cleaning" },
   spotWhite: { code: "KeyW", label: "W", name: "Точечный клин: Белый", category: "cleaning" },
   spotLama: { code: "KeyL", label: "L", name: "Точечный клин: LaMa", category: "cleaning" },
   spotWhiteDel: { code: "KeyW", shift: true, label: "Shift+W", name: "Белый + Удалить", category: "cleaning" },
@@ -211,8 +213,20 @@ export function loadHotkeys(): HotkeyConfig {
   try {
     const raw = localStorage.getItem(HOTKEYS_STORAGE_KEY)
     if (!raw) return { ...DEFAULT_HOTKEYS }
-    const parsed = JSON.parse(raw)
-    return { ...DEFAULT_HOTKEYS, ...parsed }
+    const parsed = JSON.parse(raw) as Partial<HotkeyConfig>
+    const merged: HotkeyConfig = { ...DEFAULT_HOTKEYS, ...parsed }
+
+    // Миграция старых конфигов: клавиша "C" перешла от класса бабла к автоклину
+    // страницы. Если пользователь не перенастраивал класс бабла, переносим его
+    // на новый дефолт (Shift+C), чтобы хоткеи не перекрывали друг друга.
+    if (!parsed.cleanPage) {
+      const bubble = merged.setClassBubble
+      if (bubble && bubble.code === "KeyC" && !bubble.ctrl && !bubble.shift && !bubble.alt) {
+        merged.setClassBubble = { ...DEFAULT_HOTKEYS.setClassBubble }
+      }
+    }
+
+    return merged
   } catch {
     return { ...DEFAULT_HOTKEYS }
   }

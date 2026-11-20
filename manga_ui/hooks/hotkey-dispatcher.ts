@@ -12,6 +12,8 @@ import type { TextBlock } from "@/lib/types"
 
 export interface HotkeyDispatchContext {
   hotkeys: HotkeyConfig
+  /** true, когда поверх страницы открыта модалка/другой UI-слой. */
+  disabled?: boolean
   selectedId: string | null
   textBlocks: TextBlock[]
   defaultFontSize: number
@@ -28,6 +30,7 @@ export interface HotkeyDispatchContext {
   onDeleteBlock: (id: string) => void
   onMoveBlock: (id: string, direction: "up" | "down") => void
   onUpdateBlock: (id: string, patch: Partial<TextBlock>) => void
+  onCleanPage?: () => void
   onSpotClean?: (block: TextBlock, method: "auto" | "lama" | "white", deleteAfter?: boolean) => Promise<void>
   onBrushResize?: (delta: number) => void
   onChapterDetectAll?: () => void
@@ -39,6 +42,9 @@ export interface HotkeyDispatchContext {
 
 /** Обрабатывает нажатие; возвращает true, если событие было перехвачено. */
 export function dispatchMangaHotkey(e: KeyboardEvent, ctx: HotkeyDispatchContext): boolean {
+  // Пока открыта модалка, фоновые хоткеи страницы не должны менять данные.
+  if (ctx.disabled) return false
+
   const target = e.target as HTMLElement | null
   if (
     target instanceof HTMLTextAreaElement ||
@@ -117,7 +123,16 @@ export function dispatchMangaHotkey(e: KeyboardEvent, ctx: HotkeyDispatchContext
     }
   }
 
-  // 6. Действия с главой
+  // 6. Автоклин текущей страницы (Smart Clean)
+  if (matchHotkey(e, hotkeys.cleanPage)) {
+    if (ctx.onCleanPage) {
+      e.preventDefault()
+      ctx.onCleanPage()
+      return true
+    }
+  }
+
+  // 7. Действия с главой
   if (matchHotkey(e, hotkeys.chapterDetectAll)) {
     e.preventDefault()
     ctx.onChapterDetectAll?.()
@@ -144,7 +159,7 @@ export function dispatchMangaHotkey(e: KeyboardEvent, ctx: HotkeyDispatchContext
     return true
   }
 
-  // 7. Размер кисти (Стрелки вверх/вниз)
+  // 8. Размер кисти (Стрелки вверх/вниз)
   if (matchHotkey(e, hotkeys.brushSizeUp)) {
     if (ctx.onBrushResize) {
       e.preventDefault()
@@ -165,18 +180,15 @@ export function dispatchMangaHotkey(e: KeyboardEvent, ctx: HotkeyDispatchContext
   const activeBlock = textBlocks.find((b) => b.id === selectedId)
   if (!activeBlock) return false
 
-  // 8. Одиночный OCR выбранного бабла [O]
+  // 9. Одиночный OCR выбранного бабла [O]
   if (matchHotkey(e, hotkeys.ocrBlock)) {
+    if (!ctx.onOcrBlock) return false
     e.preventDefault()
-    if (ctx.onOcrBlock) {
-      ctx.onOcrBlock(activeBlock)
-    } else {
-      window.dispatchEvent(new CustomEvent("manga-ocr-selected-block", { detail: { blockId: activeBlock.id } }))
-    }
+    ctx.onOcrBlock(activeBlock)
     return true
   }
 
-  // 9. Смена типа бабла
+  // 10. Смена типа бабла
   if (matchHotkey(e, hotkeys.setClassBubble)) {
     e.preventDefault()
     ctx.onSetClass?.(0) // Бабл
@@ -198,7 +210,7 @@ export function dispatchMangaHotkey(e: KeyboardEvent, ctx: HotkeyDispatchContext
     return true
   }
 
-  // 10. Выбор шрифтов 1..7
+  // 11. Выбор шрифтов 1..7
   for (const font of MANGA_FONTS) {
     const actionKey = `font${font.index}` as HotkeyActionId
     const binding = hotkeys[actionKey]
@@ -209,7 +221,7 @@ export function dispatchMangaHotkey(e: KeyboardEvent, ctx: HotkeyDispatchContext
     }
   }
 
-  // 11. Точечный клин
+  // 12. Точечный клин
   if (matchHotkey(e, hotkeys.spotWhiteDel)) {
     e.preventDefault()
     ctx.onSpotClean?.(activeBlock, "white", true)
@@ -231,7 +243,7 @@ export function dispatchMangaHotkey(e: KeyboardEvent, ctx: HotkeyDispatchContext
     return true
   }
 
-  // 12. Удаление бабла (точечно поддерживаем Backspace, если на удаление назначен Delete)
+  // 13. Удаление бабла (точечно поддерживаем Backspace, если на удаление назначен Delete)
   const backspaceDeletesBlock =
     hotkeys.deleteBlock.code === "Delete" &&
     e.code === "Backspace" &&
@@ -244,7 +256,7 @@ export function dispatchMangaHotkey(e: KeyboardEvent, ctx: HotkeyDispatchContext
     return true
   }
 
-  // 13. Порядок чтения
+  // 14. Порядок чтения
   if (matchHotkey(e, hotkeys.moveOrderUp)) {
     e.preventDefault()
     ctx.onMoveBlock(selectedId, "up")
@@ -256,7 +268,7 @@ export function dispatchMangaHotkey(e: KeyboardEvent, ctx: HotkeyDispatchContext
     return true
   }
 
-  // 14. Размер шрифта
+  // 15. Размер шрифта
   const currentEffectiveFont = activeBlock.fontSize ?? defaultFontSize
   if (matchHotkey(e, hotkeys.fontSizeDown)) {
     e.preventDefault()
@@ -269,7 +281,7 @@ export function dispatchMangaHotkey(e: KeyboardEvent, ctx: HotkeyDispatchContext
     return true
   }
 
-  // 15. Геометрия и стили
+  // 16. Геометрия и стили
   if (matchHotkey(e, hotkeys.toggleShape)) {
     e.preventDefault()
     ctx.onUpdateBlock(selectedId, { shape: activeBlock.shape === "ellipse" ? "rect" : "ellipse" })

@@ -6,7 +6,7 @@
  */
 
 import type { PageStatus } from "@/lib/types"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { FolderTree, Plus, PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import type { TitleProject, ProjectTree, PageItem, ChapterItem } from "@/lib/types"
 import {
@@ -30,6 +30,7 @@ export interface SidebarProps {
   onSelectPage: (page: PageItem, chapterPages?: PageItem[]) => void
   onChapterDeleted?: (chapterId: number) => void
   onTitleSelected?: (titleId: number, defaultFontSize?: number) => void
+  onTitleDeleted?: (titleId: number) => void
 }
 
 export function Sidebar({
@@ -39,6 +40,7 @@ export function Sidebar({
   onSelectPage,
   onChapterDeleted,
   onTitleSelected,
+  onTitleDeleted,
 }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(true)
   const [projects, setProjects] = useState<TitleProject[]>([])
@@ -81,19 +83,43 @@ export function Sidebar({
     loadProjects()
   }, [loadProjects])
 
+  // Какое дерево уже показано: при фоновом обновлении (после batch) спиннер
+  // не нужен, иначе всё дерево глав мерцает и сбрасывает скролл.
+  const loadedTitleIdRef = useRef<number | null>(null)
+  // Отсекает устаревший ответ дерева при быстром переключении тайтлов.
+  const treeReqSeqRef = useRef(0)
+
   const loadTree = useCallback(async (titleId: number) => {
-    setLoadingTree(true)
+    const seq = ++treeReqSeqRef.current
+    const isFirstLoadOrSwitch = loadedTitleIdRef.current !== titleId
+    if (isFirstLoadOrSwitch) {
+      setLoadingTree(true)
+      setProjectTree(null)
+    }
     try {
       const tree = await getProjectTree(titleId)
+      // Пока шёл запрос, пользователь мог выбрать другой тайтл.
+      if (seq !== treeReqSeqRef.current) return
       setProjectTree(tree)
+      loadedTitleIdRef.current = titleId
       onTitleSelected?.(titleId, tree.default_font_size)
       if (tree.chapters && tree.chapters.length > 0) {
-        setExpandedChapters((prev) => (Object.keys(prev).length === 0 ? { [tree.chapters[0].id]: true } : prev))
+        setExpandedChapters((prev) => {
+          // Раскрываем первую главу, если ни одна глава нового дерева
+          // ещё не раскрыта (prev от предыдущего тайтла не должен мешать).
+          const hasExpanded = tree.chapters.some((c) => prev[c.id])
+          if (hasExpanded) return prev
+          return { [tree.chapters[0].id]: true }
+        })
       }
     } catch (e) {
+      if (seq !== treeReqSeqRef.current) return
       console.error("Ошибка загрузки глав:", e)
+      // Тайтл мог быть удалён: не оставляем чужое/устаревшее дерево в UI.
+      loadedTitleIdRef.current = null
+      setProjectTree(null)
     } finally {
-      setLoadingTree(false)
+      if (isFirstLoadOrSwitch && seq === treeReqSeqRef.current) setLoadingTree(false)
     }
   }, [onTitleSelected])
 
@@ -101,6 +127,9 @@ export function Sidebar({
     if (selectedTitleId) {
       loadTree(selectedTitleId)
     } else {
+      // Сбрасываем маркер: при повторном выборе тайтла нужен полный перезагруз.
+      loadedTitleIdRef.current = null
+      treeReqSeqRef.current += 1
       setProjectTree(null)
     }
   }, [selectedTitleId, loadTree, refreshTrigger])
@@ -194,9 +223,14 @@ export function Sidebar({
 
   const handleDeleteTitle = async (titleId: number) => {
     if (!confirm("Удалить этот тайтл из базы? Файлы на диске затронуты не будут.")) return
-    await deleteProject(titleId)
-    setSelectedTitleId(null)
-    await loadProjects()
+    try {
+      await deleteProject(titleId)
+      onTitleDeleted?.(titleId)
+      setSelectedTitleId(null)
+      await loadProjects()
+    } catch (err) {
+      alert("Ошибка удаления тайтла: " + String(err))
+    }
   }
 
   const projectList = Array.isArray(projects) ? projects : []

@@ -1,12 +1,8 @@
 // manga_ui/hooks/pipelines/translate-pipeline.ts
 // Локальный перевод через Ollama с дораспознаванием пустых баблов и передачей глоссария и синопсиса тайтла
 
-import { releaseVram, runOcr, getGlossary, getProjectTree } from "@/lib/api"
-import {
-  runOllamaBatchTranslate,
-  checkOllamaConnection,
-  pickBestOllamaModel,
-} from "@/lib/api/ollama"
+import { releaseVram, runOcr, runBatchTranslate, getGlossary, getProjectTree } from "@/lib/api"
+import { checkOllamaConnection } from "@/lib/api/ollama"
 import { runConcurrent } from "./concurrent-pool"
 import type { PagePipelineContext } from "./types"
 
@@ -36,19 +32,22 @@ export async function loadTitleTranslationContext(titleId?: number | null): Prom
 export async function executeTranslateAll(ctx: PagePipelineContext): Promise<void> {
   const {
     textBlocks,
-    setTextBlocks,
-    textBlocksRef,
     globalSettings,
-    saveBlocks,
+    saveBlocksExplicit,
+    applyBlocksForPage,
+    isCurrentPage,
     onPageStatusUpdate,
     setShowTypeset,
     setIsBatchTranslating,
   } = ctx
   const currentPage = ctx.currentPage
   if (!currentPage || textBlocks.length === 0) return
+
+  // Фиксируем страницу и снимок блоков до первого долгого await.
+  const targetPageId = currentPage.id
   setIsBatchTranslating(true)
   try {
-    await saveBlocks(true)
+    await saveBlocksExplicit(targetPageId, textBlocks, true)
 
     const blocksToOcr = textBlocks.map((b) => ({ ...b }))
     const neededOcrIndices = blocksToOcr
@@ -56,22 +55,34 @@ export async function executeTranslateAll(ctx: PagePipelineContext): Promise<voi
       .filter((idx): idx is number => idx !== null)
 
     if (neededOcrIndices.length > 0) {
+      const ocrFailed: number[] = []
       await runConcurrent(neededOcrIndices, 3, async (idx) => {
         const b = blocksToOcr[idx]
-        const ocrText = await runOcr(
-          currentPage.id,
-          b.x,
-          b.y,
-          b.width,
-          b.height,
-          b.rotation || 0,
-          b.id,
-          b.class_id ?? 0
-        )
-        blocksToOcr[idx] = { ...b, japText: ocrText, status: "ocr-done" }
+        try {
+          const ocrText = await runOcr(
+            targetPageId,
+            b.x,
+            b.y,
+            b.width,
+            b.height,
+            b.rotation || 0,
+            b.id,
+            b.class_id ?? 0
+          )
+          blocksToOcr[idx] = { ...b, japText: ocrText, status: "ocr-done" }
+        } catch (e) {
+          // Не помечаем блок ocr-done и не пишем заглушку в japText.
+          console.error("Ошибка OCR перед переводом", b.id, e)
+          ocrFailed.push(idx)
+        }
       })
-      setTextBlocks([...blocksToOcr])
-      textBlocksRef.current = blocksToOcr
+      if (ocrFailed.length < neededOcrIndices.length) {
+        applyBlocksForPage(targetPageId, [...blocksToOcr])
+        await saveBlocksExplicit(targetPageId, blocksToOcr, true)
+      }
+      if (ocrFailed.length > 0) {
+        console.warn(`OCR не удался для ${ocrFailed.length} блоков, они пропущены`)
+      }
     }
 
     const toTranslate = blocksToOcr
@@ -85,7 +96,7 @@ export async function executeTranslateAll(ctx: PagePipelineContext): Promise<voi
 
     if (toTranslate.length === 0) return
 
-    const check = await checkOllamaConnection("http://localhost:11434")
+    const check = await checkOllamaConnection()
     if (!check.ok) {
       alert(
         "Локальная нейросеть Ollama не запущена на http://localhost:11434.\n\n" +
@@ -96,18 +107,16 @@ export async function executeTranslateAll(ctx: PagePipelineContext): Promise<voi
       return
     }
 
-    const { synopsis, glossary } = await loadTitleTranslationContext(currentPage.title_id)
-
-    const translations = await runOllamaBatchTranslate(toTranslate, {
-      baseUrl: "http://localhost:11434",
-      model: pickBestOllamaModel(check.models),
-      synopsis,
-      glossary,
-    })
+    // Единый путь перевода: бэкенд сам выбирает чат-модель, подгружает
+    // глоссарий/синопсис по page_id и переводит чанками. Ошибка бросается
+    // исключением — существующие переводы и статус страницы не меняются.
+    const translations = await runBatchTranslate(toTranslate, targetPageId)
 
     const autoOval = globalSettings.auto_oval_bubble ?? true
+    let translatedCount = 0
     const updated = blocksToOcr.map((b) => {
       if (translations[b.id]) {
+        translatedCount += 1
         const isBubble = (b.class_id ?? 0) === 0
         return {
           ...b,
@@ -119,12 +128,16 @@ export async function executeTranslateAll(ctx: PagePipelineContext): Promise<voi
       return b
     })
 
-    setTextBlocks(updated)
-    textBlocksRef.current = updated
-    await saveBlocks(true)
+    if (translatedCount === 0) {
+      alert("Ollama не вернула перевод (пустой или неразборчивый ответ). Текст баблов не изменён.")
+      return
+    }
 
-    setShowTypeset(true)
-    onPageStatusUpdate(currentPage.id, "translated")
+    applyBlocksForPage(targetPageId, updated)
+    await saveBlocksExplicit(targetPageId, updated, true)
+
+    if (isCurrentPage(targetPageId)) setShowTypeset(true)
+    onPageStatusUpdate(targetPageId, "translated")
   } catch (e) {
     console.error(e)
     alert("Ошибка при локальном переводе: " + String(e))

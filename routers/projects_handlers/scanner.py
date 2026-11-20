@@ -54,7 +54,7 @@ def _scan_and_insert_chapters(
         skip_root_direct = _has_image_subdirs(root_folder)
 
     if direct_images and not skip_root_direct:
-        norm_root = os.path.normpath(str(root_folder)).lower()
+        norm_root = os.path.normcase(os.path.abspath(str(root_folder)))
         ch_name = (
             custom_chapter_name.strip()
             if custom_chapter_name and custom_chapter_name.strip()
@@ -100,7 +100,7 @@ def _scan_and_insert_chapters(
         if not images:
             continue
 
-        norm_root = os.path.normpath(root).lower()
+        norm_root = os.path.normcase(os.path.abspath(root))
         chapter_name = Path(root).name
 
         if skip_existing and (norm_root in existing_folders or chapter_name.strip().lower() in existing_names):
@@ -128,7 +128,7 @@ def _scan_and_insert_chapters(
 def scan_project(req: ScanProjectRequest):
     folder = Path(req.folder_path)
     if not folder.exists() or not folder.is_dir():
-        return {"success": False, "error": "Папка не найдена или путь указан неверно"}
+        raise HTTPException(status_code=400, detail="Папка не найдена или путь указан неверно")
 
     try:
         with db_session() as cursor:
@@ -147,9 +147,11 @@ def scan_project(req: ScanProjectRequest):
             "success": True,
             "message": f"Тайтл '{req.name}' добавлен! Глав: {chapters_count}, страниц: {pages_count}"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Ошибка сканирования папки: {e}")
-        return {"success": False, "error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def rescan_project(title_id: int):
@@ -168,8 +170,18 @@ def rescan_project(title_id: int):
         cursor.execute("SELECT chapter_number, folder_path FROM chapters WHERE title_id = ?", (title_id,))
         existing_rows = cursor.fetchall()
 
-    existing_folders = {os.path.normpath(r["folder_path"]).lower() for r in existing_rows if r["folder_path"]}
-    existing_names = {r["chapter_number"].strip().lower() for r in existing_rows if r["chapter_number"]}
+    existing_folders = {
+        os.path.normcase(os.path.abspath(r["folder_path"]))
+        for r in existing_rows
+        if r["folder_path"]
+    }
+    # Имена сравниваем только для legacy-строк без folder_path: иначе «Ch1» из
+    # Vol1 и Vol2 считались бы одной главой.
+    existing_names = {
+        r["chapter_number"].strip().lower()
+        for r in existing_rows
+        if not r["folder_path"] and r["chapter_number"]
+    }
 
     try:
         with db_session() as cur:
@@ -203,28 +215,52 @@ def add_chapters_to_title(title_id: int, req: AddChapterRequest):
         cursor = conn.cursor()
         cursor.execute("SELECT id, name FROM titles WHERE id = ?", (title_id,))
         title_row = cursor.fetchone()
+        cursor.execute("SELECT chapter_number, folder_path FROM chapters WHERE title_id = ?", (title_id,))
+        existing_rows = cursor.fetchall()
 
     if not title_row:
         raise HTTPException(status_code=404, detail="Тайтл не найден")
 
+    existing_folders = {
+        os.path.normcase(os.path.abspath(r["folder_path"]))
+        for r in existing_rows
+        if r["folder_path"]
+    }
+    existing_names = {
+        r["chapter_number"].strip().lower()
+        for r in existing_rows
+        if not r["folder_path"] and r["chapter_number"]
+    }
+
     try:
         with db_session() as cur:
-            added_chapters, added_pages, _ = _scan_and_insert_chapters(
+            added_chapters, added_pages, skipped_chapters = _scan_and_insert_chapters(
                 cur,
                 title_id=title_id,
                 root_folder=folder,
-                skip_existing=False,
+                skip_existing=True,
+                existing_folders=existing_folders,
+                existing_names=existing_names,
                 custom_chapter_name=req.chapter_number
             )
 
         if added_chapters == 0:
+            if skipped_chapters > 0:
+                return {
+                    "success": True,
+                    "message": f"Глава уже добавлена ранее (пропущено: {skipped_chapters})",
+                    "chapters_added": 0,
+                    "pages_added": 0,
+                    "skipped_chapters": skipped_chapters,
+                }
             raise HTTPException(status_code=400, detail="В папке не найдено изображений")
 
         return {
             "success": True,
             "message": f"Добавлено глав: {added_chapters}, страниц: {added_pages}",
             "chapters_added": added_chapters,
-            "pages_added": added_pages
+            "pages_added": added_pages,
+            "skipped_chapters": skipped_chapters,
         }
     except HTTPException:
         raise

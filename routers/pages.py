@@ -28,9 +28,9 @@ def unload_all_models_endpoint():
 
 
 @router.get("/{page_id}")
-def get_page_details(page_id: int):
+def get_page_details(page_id: int, cleanup_backups: bool = True):
     """Информация о странице и путях к оригинальному и заклиненному сканам."""
-    return _h.get_page_details(page_id)
+    return _h.get_page_details(page_id, cleanup_backups)
 
 
 @router.get("/{page_id}/speakers")

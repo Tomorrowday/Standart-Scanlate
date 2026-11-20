@@ -1,12 +1,27 @@
 import os
 import shutil
 import mimetypes
+import threading
 from pathlib import Path
 from typing import Optional, List
 from fastapi import HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse
 
 MAX_CLEAN_BACKUPS = 1
+
+# Блокировки клина по странице: два параллельных запроса spot_clean/brush_clean
+# к одной странице не должны одновременно читать и перезаписывать clean/*.png.
+# ВАЖНО: lock действует в пределах одного процесса. При запуске uvicorn с
+# несколькими воркерами нужен файловый lock (сейчас приложение работает в
+# одном процессе, см. docs/architecture-decisions.md).
+_page_clean_locks: dict[int, threading.Lock] = {}
+_page_clean_locks_guard = threading.Lock()
+
+
+def page_clean_lock(page_id: int) -> threading.Lock:
+    """Возвращает per-page блокировку операций клина (чтение-клин-запись)."""
+    with _page_clean_locks_guard:
+        return _page_clean_locks.setdefault(page_id, threading.Lock())
 
 
 def _get_clean_backup_path(orig_path: str) -> str:
@@ -94,24 +109,23 @@ def _backup_clean_file_if_exists(orig_path: str, clean_path: Optional[str]) -> N
         pass
 
 
-def serve_image_file_safely(file_path: str) -> Response:
+def serve_image_file_safely(file_path: str, no_cache: bool = False) -> Response:
+    """
+    Отдаёт изображение страницы через FileResponse (стриминг, ETag, Last-Modified).
+
+    no_cache=True нужен для clean-image: после кисти/точечного клина браузер не
+    должен показывать старый заклиненный скан из кэша.
+    """
     if not file_path or not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Файл изображения не найден на диске")
-
-    try:
-        data = Path(file_path).read_bytes()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Не удалось прочитать файл: {e}")
 
     mime_type, _ = mimetypes.guess_type(file_path)
     if not mime_type:
         mime_type = "image/png" if file_path.lower().endswith(".png") else "image/jpeg"
 
-    return Response(
-        content=data,
+    cache_control = "no-cache" if no_cache else "public, max-age=3600"
+    return FileResponse(
+        path=file_path,
         media_type=mime_type,
-        headers={
-            "Content-Length": str(len(data)),
-            "Cache-Control": "public, max-age=3600",
-        }
+        headers={"Cache-Control": cache_control},
     )

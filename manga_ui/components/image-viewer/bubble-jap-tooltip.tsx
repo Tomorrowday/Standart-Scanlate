@@ -31,6 +31,7 @@ export interface BubbleJapTooltipProps {
   autoJapPlacement?: JapPlatePlacement | null
   onSelect: (id: string) => void
   onUpdate?: (id: string, patch: Partial<TextBlock>) => void
+  onUpdateTransient?: (id: string, patch: Partial<TextBlock>) => void
 }
 
 export function BubbleJapTooltip({
@@ -48,6 +49,7 @@ export function BubbleJapTooltip({
   autoJapPlacement = null,
   onSelect,
   onUpdate,
+  onUpdateTransient,
 }: BubbleJapTooltipProps) {
   const ctrl = useJapTooltipController({
     box,
@@ -62,6 +64,7 @@ export function BubbleJapTooltip({
     autoJapPlacement,
     onSelect,
     onUpdate,
+    onUpdateTransient,
   })
 
   if (!ctrl.isVisible) return null

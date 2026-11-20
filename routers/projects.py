@@ -71,6 +71,12 @@ def get_available_ocr_models_endpoint():
     return _h.get_available_ocr_models_endpoint()
 
 
+@router.get("/brush-models")
+def get_available_brush_models_endpoint():
+    """Список доступных моделей маски текста (U-Net, weights/brush)."""
+    return _h.get_available_brush_models_endpoint()
+
+
 @router.get("/{title_id}/tree")
 def get_project_tree(title_id: int):
     """Дерево проекта: главы, страницы и статусы."""

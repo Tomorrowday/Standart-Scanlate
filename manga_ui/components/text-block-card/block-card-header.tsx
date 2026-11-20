@@ -42,22 +42,22 @@ const CLASS_CONFIG: Record<number, { label: string; className: string; title: st
   0: {
     label: "[1] Бабл",
     className: "border-emerald-500/60 bg-emerald-950/60 text-emerald-300 hover:bg-emerald-900/60",
-    title: "Класс 0: Обычный бабл речи. Хоткей [C]",
+    title: "Класс 0: Обычный бабл речи",
   },
   1: {
     label: "[2] Мысли",
     className: "border-sky-500/60 bg-sky-950/60 text-sky-300 hover:bg-sky-900/60",
-    title: "Класс 1: Мысли / Прямоугольный блок. Хоткей [V]",
+    title: "Класс 1: Мысли / Прямоугольный блок",
   },
   2: {
     label: "[3] Текст",
     className: "border-purple-500/60 bg-purple-950/60 text-purple-300 hover:bg-purple-900/60",
-    title: "Класс 2: Текст на арте (Free Text). Хоткей [G]",
+    title: "Класс 2: Текст на арте (Free Text)",
   },
   3: {
     label: "[4] Звук",
     className: "border-amber-700/80 bg-amber-950/60 text-orange-400 hover:bg-amber-900/60",
-    title: "Класс 3: Звуковой эффект (SFX). Хоткей [F4]",
+    title: "Класс 3: Звуковой эффект (SFX)",
   },
 }
 

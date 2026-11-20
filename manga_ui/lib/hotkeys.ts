@@ -62,6 +62,7 @@ export type HotkeyActionId =
   | "spotLamaDel"
   | "brushSizeUp"
   | "brushSizeDown"
+  | "toggleToolMode"
   | "chapterDetectAll"
   | "chapterCleanAll"
   | "chapterExportAll"
@@ -108,7 +109,9 @@ export const DEFAULT_HOTKEYS: HotkeyConfig = {
   // Стили, OCR и типы бабла
   ocrBlock: { code: "KeyO", label: "O", name: "Распознать OCR бабла", category: "bubble" },
   setClassBubble: { code: "KeyC", shift: true, label: "Shift+C", name: "Класс: Бабл (0)", category: "bubble" },
-  setClassThought: { code: "KeyV", label: "V", name: "Класс: Мысли (1)", category: "bubble" },
+  // Клавиша V отдана переключению Box/Brush (см. toggleToolMode), поэтому
+  // класс «Мысли» переехал на Shift+V.
+  setClassThought: { code: "KeyV", shift: true, label: "Shift+V", name: "Класс: Мысли (1)", category: "bubble" },
   setClassText: { code: "KeyG", label: "G", name: "Класс: Текст (2)", category: "bubble" },
   setClassSfx: { code: "F4", label: "F4", name: "Класс: Звук SFX (3)", category: "bubble" },
   deleteBlock: { code: "Delete", label: "Delete", name: "Удалить бабл", category: "bubble" },
@@ -130,6 +133,7 @@ export const DEFAULT_HOTKEYS: HotkeyConfig = {
   spotLamaDel: { code: "KeyL", shift: true, label: "Shift+L", name: "LaMa + Удалить", category: "cleaning" },
   brushSizeUp: { code: "ArrowUp", label: "↑", name: "Кисть: увеличить", category: "tools" },
   brushSizeDown: { code: "ArrowDown", label: "↓", name: "Кисть: уменьшить", category: "tools" },
+  toggleToolMode: { code: "KeyV", label: "V", name: "Инструмент: Box / Brush", category: "tools" },
 
   // Действия с главой
   chapterDetectAll: { code: "KeyD", alt: true, label: "Alt+D", name: "Глава: Detect & OCR", category: "chapter" },
@@ -223,6 +227,18 @@ export function loadHotkeys(): HotkeyConfig {
       const bubble = merged.setClassBubble
       if (bubble && bubble.code === "KeyC" && !bubble.ctrl && !bubble.shift && !bubble.alt) {
         merged.setClassBubble = { ...DEFAULT_HOTKEYS.setClassBubble }
+      }
+    }
+
+    // Миграция: одиночная клавиша "V" перешла от класса «Мысли» к
+    // переключению инструментов Box / Brush. Если пользователь ещё не трогал
+    // новый бинд, а у «Мыслей» остался старый одиночный V — переносим его на
+    // Shift+V, чтобы хоткеи не перекрывали друг друга.
+    const toggleTool = merged.toggleToolMode
+    if (toggleTool && toggleTool.code === "KeyV" && !toggleTool.ctrl && !toggleTool.shift && !toggleTool.alt) {
+      const thought = merged.setClassThought
+      if (thought && thought.code === "KeyV" && !thought.ctrl && !thought.shift && !thought.alt) {
+        merged.setClassThought = { ...DEFAULT_HOTKEYS.setClassThought }
       }
     }
 

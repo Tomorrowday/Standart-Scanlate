@@ -4,7 +4,7 @@
 "use client"
 
 import { BoxSelect, Image as ImageIcon, Paintbrush, Sparkles } from "lucide-react"
-import type { BrushMode } from "@/hooks/use-brush-tool"
+import { BRUSH_WHEEL_MODIFIER_LABEL, type BrushMode } from "@/hooks/use-brush-tool"
 import type { HotkeyConfig } from "@/lib/hotkeys"
 
 export interface ViewerHeaderToolbarProps {
@@ -67,7 +67,7 @@ export function ViewerHeaderToolbar({
                   ? "bg-indigo-600 text-white shadow-sm"
                   : "text-slate-400 hover:text-slate-200",
               ].join(" ")}
-              title="Инструмент «Рамка бабла»"
+              title={`Инструмент «Рамка бабла» (${hotkeys.toggleToolMode.label})`}
             >
               <BoxSelect className="h-3.5 w-3.5" />
               Box
@@ -82,7 +82,7 @@ export function ViewerHeaderToolbar({
                   ? "bg-pink-600 text-white shadow-sm"
                   : "text-slate-400 hover:text-slate-200",
               ].join(" ")}
-              title="Кисть (LaMa, Белый или Чёрный)"
+              title={`Кисть (LaMa, Белый или Чёрный) (${hotkeys.toggleToolMode.label})`}
             >
               <Paintbrush className="h-3.5 w-3.5" />
               Brush
@@ -139,7 +139,7 @@ export function ViewerHeaderToolbar({
         {activeTool === "brush" && imageSrc && (
           <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1 text-xs">
             <span className="text-[11px] font-medium text-slate-400">
-              Размер ({hotkeys.brushSizeUp.label}/{hotkeys.brushSizeDown.label}):
+              Размер ({hotkeys.brushSizeUp.label}/{hotkeys.brushSizeDown.label} или {BRUSH_WHEEL_MODIFIER_LABEL}+колесо):
             </span>
             <input
               type="range"

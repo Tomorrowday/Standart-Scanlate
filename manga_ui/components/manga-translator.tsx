@@ -48,6 +48,9 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
   const [showTypeset, setShowTypeset] = useState(false)
   const [showJapOverlay, setShowJapOverlay] = useState(false)
   const [brushSize, setBrushSize] = useState<number>(32)
+  // Активный инструмент вьювера: рамка бабла или кисть ретуши. Живёт здесь,
+  // чтобы переключаться и кнопкой в шапке, и глобальным хоткеем (V).
+  const [activeTool, setActiveTool] = useState<"box" | "brush">("box")
   const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0)
 
   // Модальные окна
@@ -237,6 +240,12 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
 
   const uiLayerOpen = useUiLayerOpen()
 
+  // Box <-> Brush по хоткею. Без открытой страницы инструменты недоступны.
+  const handleToggleToolMode = useCallback(() => {
+    if (!currentPage) return
+    setActiveTool((prev) => (prev === "box" ? "brush" : "box"))
+  }, [currentPage])
+
   useMangaHotkeys({
     disabled: uiLayerOpen,
     selectedId: blocks.selectedId,
@@ -258,6 +267,7 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
     onCleanPage: () => void pipelines.handleCleanPage("auto"),
     onSpotClean: blocks.spotCleanBlock,
     onBrushResize: actions.handleBrushResize,
+    onToggleToolMode: handleToggleToolMode,
     onChapterDetectAll: batchActions.detectAll,
     onChapterCleanAll: batchActions.cleanChapter,
     onChapterExportAll: batchActions.exportAll,
@@ -334,6 +344,8 @@ export function MangaTranslator(_props: MangaTranslatorProps) {
           autoOvalBubble={settings.globalSettings.auto_oval_bubble ?? true}
           brushSize={brushSize}
           onBrushResize={actions.handleBrushResize}
+          activeTool={activeTool}
+          onToolChange={setActiveTool}
           onToggleViewMode={actions.handleToggleViewMode}
           onSelect={blocks.setSelectedId}
           onDrawComplete={blocks.addOrUpdateDrawnBlock}

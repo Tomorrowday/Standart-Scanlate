@@ -36,6 +36,7 @@ export interface UseMangaHotkeysProps {
   onCleanPage?: () => void
   onSpotClean?: (block: TextBlock, method: "auto" | "lama" | "white", deleteAfter?: boolean) => Promise<void>
   onBrushResize?: (delta: number) => void
+  onToggleToolMode?: () => void
   onChapterDetectAll?: () => void
   onChapterCleanAll?: () => void
   onChapterExportAll?: () => void
@@ -78,6 +79,7 @@ export function useMangaHotkeys(props: UseMangaHotkeysProps): void {
         onCleanPage: p.onCleanPage,
         onSpotClean: p.onSpotClean,
         onBrushResize: p.onBrushResize,
+        onToggleToolMode: p.onToggleToolMode,
         onChapterDetectAll: p.onChapterDetectAll,
         onChapterCleanAll: p.onChapterCleanAll,
         onChapterExportAll: p.onChapterExportAll,

@@ -8,12 +8,41 @@ import type { BrushMaskRect } from "@/lib/api/pages"
 
 export type BrushMode = "lama" | "white" | "black"
 
+export type BrushWheelModifier = "shift" | "ctrl" | "alt"
+
+/**
+ * Модификатор, который нужно зажать вместе с колесом мыши, чтобы изменить
+ * размер кисти. Поменяйте значение на "ctrl" или "alt" — обработчик ниже
+ * подхватит изменение автоматически.
+ */
+export const BRUSH_WHEEL_MODIFIER: BrushWheelModifier = "shift"
+
+/** Человекочитаемая подпись модификатора для подсказок в UI. */
+export function brushWheelModifierLabel(modifier: BrushWheelModifier): string {
+  if (modifier === "ctrl") return "Ctrl"
+  if (modifier === "alt") return "Alt"
+  return "Shift"
+}
+
+export const BRUSH_WHEEL_MODIFIER_LABEL = brushWheelModifierLabel(BRUSH_WHEEL_MODIFIER)
+
+/** Шаг изменения размера кисти за один «щелчок» колеса, px. */
+const BRUSH_WHEEL_STEP = 4
+
+function isBrushWheelModifierPressed(e: WheelEvent, modifier: BrushWheelModifier): boolean {
+  if (modifier === "ctrl") return e.ctrlKey || e.metaKey
+  if (modifier === "alt") return e.altKey
+  return e.shiftKey
+}
+
 export interface UseBrushToolProps {
   imgRef: React.RefObject<HTMLImageElement | null>
   brushSize: number
   brushMode: BrushMode
   imageSrc: string | null
   onBrushClean?: (maskBase64: string, mode: BrushMode, maskRect?: BrushMaskRect) => Promise<void>
+  /** Изменение размера кисти (вызывается колесом мыши с зажатым модификатором). */
+  onBrushResize?: (delta: number) => void
 }
 
 export interface UseBrushToolReturn {
@@ -32,6 +61,7 @@ export function useBrushTool({
   brushMode,
   imageSrc,
   onBrushClean,
+  onBrushResize,
 }: UseBrushToolProps): UseBrushToolReturn {
   const brushCanvasRef = useRef<HTMLCanvasElement>(null)
   const cursorRef = useRef<HTMLDivElement>(null)
@@ -99,6 +129,23 @@ export function useBrushTool({
       window.removeEventListener("resize", syncBrushCanvasSize)
     }
   }, [syncBrushCanvasSize, imageSrc, imgRef])
+
+  // Колесо мыши с зажатым модификатором меняет размер кисти. Слушатель нативный:
+  // React-обёртка onWheel пассивная и не может отменить прокрутку/зум страницы.
+  // Канвас существует только в режиме кисти, поэтому в Box колесо не вмешивается.
+  useEffect(() => {
+    const canvas = brushCanvasRef.current
+    if (!canvas || !onBrushResize) return
+
+    const handleWheel = (e: WheelEvent) => {
+      if (!isBrushWheelModifierPressed(e, BRUSH_WHEEL_MODIFIER) || e.deltaY === 0) return
+      e.preventDefault()
+      onBrushResize(e.deltaY < 0 ? BRUSH_WHEEL_STEP : -BRUSH_WHEEL_STEP)
+    }
+
+    canvas.addEventListener("wheel", handleWheel, { passive: false })
+    return () => canvas.removeEventListener("wheel", handleWheel)
+  }, [onBrushResize, imageSrc])
 
   const getBrushStrokeStyle = useCallback(() => {
     if (brushMode === "white") return "rgba(255, 255, 255, 0.95)"

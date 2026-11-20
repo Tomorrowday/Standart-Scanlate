@@ -34,6 +34,8 @@ export interface ImageViewerProps {
   autoOvalBubble?: boolean
   brushSize: number
   onBrushResize: (delta: number) => void
+  activeTool: "box" | "brush"
+  onToolChange: (tool: "box" | "brush") => void
   onToggleViewMode: () => void
   onSelect: (id: string | null) => void
   onDrawComplete: (rect: DrawRect, img: HTMLImageElement, existingId?: string, rotation?: number) => void
@@ -66,6 +68,8 @@ export function ImageViewer({
   autoOvalBubble = true,
   brushSize,
   onBrushResize,
+  activeTool,
+  onToolChange,
   onToggleViewMode,
   onSelect,
   onDrawComplete,
@@ -85,7 +89,6 @@ export function ImageViewer({
   }, [])
   const { hotkeys } = useHotkeysConfig()
 
-  const [activeTool, setActiveTool] = useState<"box" | "brush">("box")
   const [brushMode, setBrushMode] = useState<BrushMode>("lama")
 
   const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null)
@@ -175,10 +178,11 @@ export function ImageViewer({
     brushMode,
     imageSrc,
     onBrushClean,
+    onBrushResize,
   })
 
   const handleToolChange = (tool: "box" | "brush") => {
-    setActiveTool(tool)
+    onToolChange(tool)
     if (tool === "box" && cursorRef.current) cursorRef.current.style.display = "none"
   }
 

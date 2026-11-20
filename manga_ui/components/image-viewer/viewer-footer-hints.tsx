@@ -4,7 +4,7 @@
 "use client"
 
 import { MousePointerSquareDashed } from "lucide-react"
-import type { BrushMode } from "@/hooks/use-brush-tool"
+import { BRUSH_WHEEL_MODIFIER_LABEL, type BrushMode } from "@/hooks/use-brush-tool"
 import type { HotkeyConfig } from "@/lib/hotkeys"
 
 export interface ViewerFooterHintsProps {
@@ -39,6 +39,11 @@ export function ViewerFooterHints({ activeTool, brushMode, hotkeys }: ViewerFoot
               {hotkeys.brushSizeDown.label}
             </kbd>
             меньше
+            <span className="mx-1 text-slate-700">|</span>
+            <kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-pink-300 border border-slate-700">
+              {BRUSH_WHEEL_MODIFIER_LABEL} + колесо
+            </kbd>
+            размер
           </>
         ) : (
           <>
@@ -79,6 +84,11 @@ export function ViewerFooterHints({ activeTool, brushMode, hotkeys }: ViewerFoot
             JP
           </>
         )}
+        <span className="mx-1 text-slate-700">|</span>
+        <kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-slate-300 border border-slate-700">
+          {hotkeys.toggleToolMode.label}
+        </kbd>{" "}
+        Box/Brush
         <span className="mx-1 text-slate-700">|</span>
         <kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-slate-300 border border-slate-700">
           {hotkeys.toggleViewMode.label}

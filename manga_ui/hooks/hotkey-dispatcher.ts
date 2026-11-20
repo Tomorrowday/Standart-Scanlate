@@ -33,6 +33,7 @@ export interface HotkeyDispatchContext {
   onCleanPage?: () => void
   onSpotClean?: (block: TextBlock, method: "auto" | "lama" | "white", deleteAfter?: boolean) => Promise<void>
   onBrushResize?: (delta: number) => void
+  onToggleToolMode?: () => void
   onChapterDetectAll?: () => void
   onChapterCleanAll?: () => void
   onChapterExportAll?: () => void
@@ -119,6 +120,15 @@ export function dispatchMangaHotkey(e: KeyboardEvent, ctx: HotkeyDispatchContext
     if (ctx.onToggleJapCheck) {
       e.preventDefault()
       ctx.onToggleJapCheck()
+      return true
+    }
+  }
+
+  // 5.1. Переключение инструмента Box / Brush (V)
+  if (matchHotkey(e, hotkeys.toggleToolMode)) {
+    if (ctx.onToggleToolMode) {
+      e.preventDefault()
+      ctx.onToggleToolMode()
       return true
     }
   }

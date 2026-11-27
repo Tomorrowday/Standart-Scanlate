@@ -115,7 +115,9 @@ export async function addOrUpdateDrawnBlockOp(
 
   const defaultFont = ctx.globalSettings.font_bubble || "v_CCFaceFront"
   const defaultPadding = ctx.globalSettings.default_padding || "safe"
-  const defaultHyphens = ctx.globalSettings.default_hyphenation !== undefined ? ctx.globalSettings.default_hyphenation : true
+  // default_hyphenation=true = «с переносами», а minHyphens=true = No-Hyph, поэтому инвертируем.
+  const defaultHyphens = !(ctx.globalSettings.default_hyphenation ?? true)
+  const defaultStroke = Boolean(ctx.globalSettings.default_stroke)
 
   const id = crypto.randomUUID()
   const newBlock: TextBlock = {
@@ -134,6 +136,7 @@ export async function addOrUpdateDrawnBlockOp(
     shape: "rect",
     paddingMode: defaultPadding,
     minHyphens: defaultHyphens,
+    hasStroke: defaultStroke,
     status: "new",
   }
 

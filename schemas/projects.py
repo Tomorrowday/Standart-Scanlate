@@ -23,6 +23,7 @@ class UpdateTitleSettingsRequest(BaseModel):
     auto_oval_bubble: Optional[bool] = None
     default_padding: Optional[str] = None
     default_hyphenation: Optional[bool] = None
+    default_stroke: Optional[bool] = None
     font_bubble: Optional[str] = None
     font_thought: Optional[str] = None
     font_sfx: Optional[str] = None

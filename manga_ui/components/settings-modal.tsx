@@ -49,6 +49,7 @@ export function SettingsModal({
   const [autoOvalBubble, setAutoOvalBubble] = useState<boolean>(true)
   const [defaultPadding, setDefaultPadding] = useState<"safe" | "fit">("safe")
   const [defaultHyphenation, setDefaultHyphenation] = useState<boolean>(true)
+  const [defaultStroke, setDefaultStroke] = useState<boolean>(false)
 
   // Тогглы клинера (LaMa)
   const [lamaDownscale, setLamaDownscale] = useState<boolean>(false)
@@ -131,6 +132,7 @@ export function SettingsModal({
           if (s.auto_oval_bubble !== undefined) setAutoOvalBubble(Boolean(s.auto_oval_bubble))
           if (s.default_padding) setDefaultPadding(s.default_padding)
           if (s.default_hyphenation !== undefined) setDefaultHyphenation(Boolean(s.default_hyphenation))
+          if (s.default_stroke !== undefined) setDefaultStroke(Boolean(s.default_stroke))
 
           if (s.lama_downscale !== undefined) setLamaDownscale(Boolean(s.lama_downscale))
           if (s.show_sfx !== undefined) setShowSfx(Boolean(s.show_sfx))
@@ -168,6 +170,7 @@ export function SettingsModal({
         auto_oval_bubble: autoOvalBubble,
         default_padding: defaultPadding,
         default_hyphenation: defaultHyphenation,
+        default_stroke: defaultStroke,
         lama_downscale: lamaDownscale,
         show_sfx: showSfx,
         dict_nlp_mode: dictNlpMode,
@@ -274,6 +277,8 @@ export function SettingsModal({
               onDefaultPaddingChange={setDefaultPadding}
               defaultHyphenation={defaultHyphenation}
               onDefaultHyphenationChange={setDefaultHyphenation}
+              defaultStroke={defaultStroke}
+              onDefaultStrokeChange={setDefaultStroke}
               exportFormat={exportFormat}
               onExportFormatChange={setExportFormat}
             />

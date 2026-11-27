@@ -37,7 +37,10 @@ def detect_page_bubbles_service(
     detect_sfx = bool(cfg.get("show_sfx", 0))
 
     default_pad = cfg.get("default_padding") or "safe"
-    default_hyph = bool(cfg.get("default_hyphenation", 1))
+    # Инверсия полярности: default_hyphenation=true означает «с переносами»,
+    # а min_hyphens=1 (true) в блоке — наоборот, режим No-Hyph (без переносов).
+    min_hyphens = not bool(cfg.get("default_hyphenation", 1))
+    default_stroke = bool(cfg.get("default_stroke", 0))
 
     font_bubble = cfg.get("font_bubble") or "v_CCFaceFront"
     font_thought = cfg.get("font_thought") or "v_CCFaceFront"
@@ -77,7 +80,8 @@ def detect_page_bubbles_service(
             b["font_family"] = block_font
             b["font_size"] = None
             b["padding_mode"] = default_pad
-            b["min_hyphens"] = default_hyph
+            b["min_hyphens"] = min_hyphens
+            b["has_stroke"] = default_stroke
             b["text_color"] = "black"
             b["rotation"] = 0.0
 
@@ -98,7 +102,7 @@ def detect_page_bubbles_service(
 
             rows_to_insert.append((
                 block_id, page_id, cls_id, b["x"], b["y"], b["width"], b["height"], jap_text, b["order_index"],
-                block_font, block_shape, default_pad, int(default_hyph), b["status"]
+                block_font, block_shape, default_pad, int(min_hyphens), int(default_stroke), b["status"]
             ))
 
         # Быстрая запись (< 2 мс): удаление старых блоков и вставка новых.
@@ -109,9 +113,9 @@ def detect_page_bubbles_service(
                     """
                     INSERT OR REPLACE INTO text_blocks (
                         id, page_id, class_id, x, y, width, height, rotation, jap_text, order_index, 
-                        font_size, font_family, text_color, shape, padding_mode, min_hyphens, status
+                        font_size, font_family, text_color, shape, padding_mode, min_hyphens, has_stroke, status
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, NULL, ?, 'black', ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, NULL, ?, 'black', ?, ?, ?, ?, ?)
                     """,
                     rows_to_insert,
                 )

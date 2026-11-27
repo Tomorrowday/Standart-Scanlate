@@ -69,6 +69,7 @@ export interface TitleSettings {
   auto_oval_bubble?: boolean
   default_padding?: PaddingMode
   default_hyphenation?: boolean
+  default_stroke?: boolean
   font_bubble?: string
   font_thought?: string
   font_sfx?: string

@@ -3,7 +3,7 @@
 
 "use client"
 
-import { Volume2, Layers, CircleDot, Maximize2, WrapText, FileImage } from "lucide-react"
+import { Volume2, Layers, CircleDot, Maximize2, WrapText, FileImage, Paintbrush } from "lucide-react"
 import type { ExportFormat } from "@/lib/types"
 
 export interface SettingsTogglesTabProps {
@@ -17,6 +17,8 @@ export interface SettingsTogglesTabProps {
   onDefaultPaddingChange: (value: "safe" | "fit") => void
   defaultHyphenation: boolean
   onDefaultHyphenationChange: (value: boolean) => void
+  defaultStroke: boolean
+  onDefaultStrokeChange: (value: boolean) => void
   exportFormat: ExportFormat
   onExportFormatChange: (value: ExportFormat) => void
 }
@@ -32,6 +34,8 @@ export function SettingsTogglesTab({
   onDefaultPaddingChange,
   defaultHyphenation,
   onDefaultHyphenationChange,
+  defaultStroke,
+  onDefaultStrokeChange,
   exportFormat,
   onExportFormatChange,
 }: SettingsTogglesTabProps) {
@@ -243,6 +247,38 @@ export function SettingsTogglesTab({
             className={[
               "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out",
               defaultHyphenation ? "translate-x-5" : "translate-x-0",
+            ].join(" ")}
+          />
+        </button>
+      </div>
+
+      {/* Тоггл: Обводка текста по умолчанию */}
+      <div className="flex items-start justify-between rounded-xl border border-slate-800 bg-slate-950 p-4 transition-colors hover:border-slate-700">
+        <div className="space-y-1 pr-4">
+          <div className="flex items-center gap-2">
+            <Paintbrush className="h-4 w-4 text-amber-400" />
+            <label className="text-xs font-semibold text-slate-200">
+              Обводка текста по умолчанию (Stroke)
+            </label>
+          </div>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            <strong>Выключено (по умолчанию):</strong> новый текст создаётся без контурной обводки.<br />
+            <strong>Включено:</strong> все новые баблы (автодетект и ручное рисование) сразу получают обводку вокруг букв.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onDefaultStrokeChange(!defaultStroke)}
+          className={[
+            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+            defaultStroke ? "bg-amber-600" : "bg-slate-800",
+          ].join(" ")}
+        >
+          <span
+            className={[
+              "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out",
+              defaultStroke ? "translate-x-5" : "translate-x-0",
             ].join(" ")}
           />
         </button>

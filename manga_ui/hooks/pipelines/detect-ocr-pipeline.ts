@@ -63,7 +63,11 @@ export async function executeAutoDetect(ctx: PagePipelineContext): Promise<void>
         minHyphens:
           box.min_hyphens !== undefined
             ? Boolean(box.min_hyphens)
-            : (ctx.globalSettings.default_hyphenation ?? mapped.minHyphens),
+            : !(ctx.globalSettings.default_hyphenation ?? true),
+        hasStroke:
+          box.has_stroke !== undefined
+            ? Boolean(box.has_stroke)
+            : Boolean(ctx.globalSettings.default_stroke),
       }
     })
 

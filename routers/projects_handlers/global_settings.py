@@ -20,6 +20,7 @@ def get_global_settings_endpoint():
         "auto_oval_bubble": 1,
         "default_padding": "safe",
         "default_hyphenation": 1,
+        "default_stroke": 0,
         "font_bubble": "v_CCFaceFront",
         "font_thought": "v_CCFaceFront",
         "font_sfx": "v_Mighty Zeo 2.0",
@@ -35,6 +36,7 @@ def get_global_settings_endpoint():
 
     settings["auto_oval_bubble"] = bool(settings.get("auto_oval_bubble", 1))
     settings["default_hyphenation"] = bool(settings.get("default_hyphenation", 1))
+    settings["default_stroke"] = bool(settings.get("default_stroke", 0))
     settings["lama_downscale"] = bool(settings.get("lama_downscale", 0))
     settings["show_sfx"] = bool(row["show_sfx"]) if (row and "show_sfx" in row.keys()) else False
     settings["dict_nlp_mode"] = (row["dict_nlp_mode"] if (row and "dict_nlp_mode" in row.keys() and row["dict_nlp_mode"]) else "auto")
@@ -108,6 +110,11 @@ def update_global_settings_endpoint(req: UpdateTitleSettingsRequest):
     else:
         hyph = int(current.get("default_hyphenation") or 0)
 
+    if req.default_stroke is not None:
+        default_stroke_val = 1 if req.default_stroke else 0
+    else:
+        default_stroke_val = int(current.get("default_stroke") or 0)
+
     font_b = req.font_bubble if req.font_bubble is not None else (current.get("font_bubble") or "v_CCFaceFront")
     font_t = req.font_thought if req.font_thought is not None else (current.get("font_thought") or "v_CCFaceFront")
     font_s = req.font_sfx if req.font_sfx is not None else (current.get("font_sfx") or "v_Mighty Zeo 2.0")
@@ -171,8 +178,8 @@ def update_global_settings_endpoint(req: UpdateTitleSettingsRequest):
                 id, detector_model, ocr_model, clean_model, detect_conf,
                 auto_oval_bubble, default_padding, default_hyphenation,
                 font_bubble, font_thought, font_sfx, lama_downscale, show_sfx, dict_nlp_mode,
-                export_format, brush_model, brush_threshold, brush_extra_dilate, brush_max_side
-            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                export_format, brush_model, brush_threshold, brush_extra_dilate, brush_max_side, default_stroke
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 detector_model = excluded.detector_model,
                 ocr_model = excluded.ocr_model,
@@ -191,9 +198,10 @@ def update_global_settings_endpoint(req: UpdateTitleSettingsRequest):
                 brush_model = excluded.brush_model,
                 brush_threshold = excluded.brush_threshold,
                 brush_extra_dilate = excluded.brush_extra_dilate,
-                brush_max_side = excluded.brush_max_side
+                brush_max_side = excluded.brush_max_side,
+                default_stroke = excluded.default_stroke
             """,
-            (detector, ocr_model_val, cleaner, conf, auto_oval, padding, hyph, font_b, font_t, font_s, downscale, show_sfx_val, nlp_mode_val, export_format_val, brush_model_val, brush_threshold_val, brush_extra_dilate_val, brush_max_side_val)
+            (detector, ocr_model_val, cleaner, conf, auto_oval, padding, hyph, font_b, font_t, font_s, downscale, show_sfx_val, nlp_mode_val, export_format_val, brush_model_val, brush_threshold_val, brush_extra_dilate_val, brush_max_side_val, default_stroke_val)
         )
 
         cur.execute("SELECT show_sfx FROM global_settings WHERE id = 1")
@@ -214,6 +222,7 @@ def update_global_settings_endpoint(req: UpdateTitleSettingsRequest):
             "auto_oval_bubble": bool(auto_oval),
             "default_padding": padding,
             "default_hyphenation": bool(hyph),
+            "default_stroke": bool(default_stroke_val),
             "font_bubble": font_b,
             "font_thought": font_t,
             "font_sfx": font_s,

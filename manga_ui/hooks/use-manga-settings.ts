@@ -10,6 +10,7 @@ const DEFAULT_GLOBAL_SETTINGS: TitleSettings = {
   auto_oval_bubble: true,
   default_padding: "safe",
   default_hyphenation: true,
+  default_stroke: false,
   font_bubble: "v_CCFaceFront",
   font_thought: "v_CCFaceFront",
   font_sfx: "v_Mighty Zeo 2.0",

@@ -140,7 +140,11 @@ export function usePageNavigation({
                   minHyphens:
                     box.min_hyphens !== undefined
                       ? Boolean(box.min_hyphens)
-                      : (activeSettings.default_hyphenation ?? mapped.minHyphens),
+                      : !(activeSettings.default_hyphenation ?? true),
+                  hasStroke:
+                    box.has_stroke !== undefined
+                      ? Boolean(box.has_stroke)
+                      : Boolean(activeSettings.default_stroke),
                 }
               })
 

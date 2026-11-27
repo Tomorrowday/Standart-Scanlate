@@ -19,6 +19,7 @@ _DEFAULT_SETTINGS: Dict[str, Any] = {
     "auto_oval_bubble": 1,
     "default_padding": "safe",
     "default_hyphenation": 1,
+    "default_stroke": 0,
     "font_bubble": "v_CCFaceFront",
     "font_thought": "v_CCFaceFront",
     "font_sfx": "v_Mighty Zeo 2.0",
